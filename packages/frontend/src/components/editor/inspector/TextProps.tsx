@@ -125,10 +125,10 @@ export function TextProps({ elements }: { elements: TextElement[] }) {
           </button>
         </Row>
         <Row label="Line gap">
-          <SliderField ariaLabel="Line height" value={d.lineHeight} min={0.8} max={3} step={0.05} format={(v) => v.toFixed(2)} onChange={(v) => set({ lineHeight: v }, 'lh')} />
+          <SliderField ariaLabel="Line height" value={d.lineHeight ?? 1.15} min={0.8} max={3} step={0.05} format={(v) => v.toFixed(2)} onChange={(v) => set({ lineHeight: v }, 'lh')} />
         </Row>
         <Row label="Spacing">
-          <SliderField ariaLabel="Letter spacing" value={d.letterSpacing} min={-5} max={40} step={0.5} onChange={(v) => set({ letterSpacing: v }, 'ls')} />
+          <SliderField ariaLabel="Letter spacing" value={d.letterSpacing ?? 0} min={-5} max={40} step={0.5} onChange={(v) => set({ letterSpacing: v }, 'ls')} />
         </Row>
       </Group>
       <Group title="Color">

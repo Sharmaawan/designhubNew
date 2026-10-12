@@ -2,8 +2,10 @@ import { useMemo, useRef, useState } from 'react'
 import type Konva from 'konva'
 import type { DesignElement } from '@/models/design'
 import { updateElements } from '@/editor/actions/elementActions'
+import { contentApi } from '@/services/api/contentApi'
 import { useEditorStore } from '@/stores/editorStore'
 import { useEditorUiStore } from '@/stores/editorUiStore'
+import { errorMessage, toast } from '@/stores/toastStore'
 import { rotatedBounds, unionBounds } from '@/utils/geometry'
 import type { NodeHandlers } from './ElementNode'
 import { buildTargets, NO_GUIDES, snapBounds, type Guides, type SnapTargets } from './snapping'
@@ -112,13 +114,38 @@ export function useNodeHandlers(stage: () => Konva.Stage | null) {
         useEditorUiStore.getState().setContextMenu({ x, y })
       },
 
+      onFrameBrowse: (id) => {
+        const input = document.createElement('input')
+        input.type = 'file'
+        input.accept = 'image/*'
+        input.style.display = 'none'
+        document.body.appendChild(input)
+        const cleanup = () => input.remove()
+        input.addEventListener('change', () => {
+          const file = input.files?.[0]
+          cleanup()
+          if (!file) return
+          if (!file.type.startsWith('image/')) {
+            toast.error('Choose an image file.')
+            return
+          }
+          void contentApi.upload(file).then((asset) => {
+            const frame = store().elements[id]
+            if (frame?.type === 'frame') updateElements([id], { src: asset.url, imageScale: 1, imageOffsetX: 0, imageOffsetY: 0 })
+          }).catch((error: unknown) => {
+            toast.error(errorMessage(error))
+          })
+        }, { once: true })
+        input.addEventListener('cancel', cleanup, { once: true })
+        input.click()
+      },
+
       onDblClick: (id) => {
         const s = store()
         const el = s.elements[id]
         if (!el || el.data.locked) return
         const ui = useEditorUiStore.getState()
         if (el.type === 'text') ui.setEditingText(id)
-        else if (el.type === 'image') ui.setCropping(id)
         else if (el.type === 'table') ui.setRightTab('design')
       },
     }

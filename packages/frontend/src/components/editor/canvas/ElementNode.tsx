@@ -21,6 +21,7 @@ export interface NodeHandlers {
   onDragEnd: (id: string, node: Konva.Node) => void
   onDblClick: (id: string) => void
   onContext: (id: string, x: number, y: number) => void
+  onFrameBrowse: (id: string) => void
 }
 
 interface Props {
@@ -35,7 +36,7 @@ interface Props {
   editingText?: boolean
 }
 
-function Body({ element, interactive, playMedia, seekMedia, editingText }: Pick<Props, 'element' | 'interactive' | 'playMedia' | 'seekMedia' | 'editingText'>) {
+function Body({ element, interactive, playMedia, seekMedia, editingText, onFrameBrowse }: Pick<Props, 'element' | 'interactive' | 'playMedia' | 'seekMedia' | 'editingText'> & { onFrameBrowse?: (id: string) => void }) {
   switch (element.type) {
     case 'text':
       return <TextBody id={element.id} data={element.data} measure={interactive} hidden={editingText} />
@@ -46,7 +47,7 @@ function Body({ element, interactive, playMedia, seekMedia, editingText }: Pick<
     case 'icon':
       return <IconBody data={element.data} />
     case 'frame':
-      return <FrameBody data={element.data} />
+      return <FrameBody data={element.data} onBrowse={interactive ? () => onFrameBrowse?.(element.id) : undefined} />
     case 'chart':
       return <ChartBody data={element.data} />
     case 'table':
@@ -106,7 +107,7 @@ export const ElementNode = memo(function ElementNode(props: Props) {
       onDblClick={() => handlers?.onDblClick(el.id)}
       onDblTap={() => handlers?.onDblClick(el.id)}
     >
-      <Body element={el} interactive={interactive} playMedia={props.playMedia} seekMedia={props.seekMedia} editingText={props.editingText} />
+      <Body element={el} interactive={interactive} playMedia={props.playMedia} seekMedia={props.seekMedia} editingText={props.editingText} onFrameBrowse={handlers?.onFrameBrowse} />
     </Group>
   )
 })

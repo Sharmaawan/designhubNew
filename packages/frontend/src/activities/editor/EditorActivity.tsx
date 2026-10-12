@@ -1,7 +1,9 @@
 import { canEditAccess } from '@/models/access'
-import { useCallback, useEffect, useState } from 'react'
+import type { Access } from '@/models/api'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { projectApi } from '@/services/api/projectApi'
+import { approvalApi } from '@/services/api/approvalApi'
 import { collabSession } from '@/services/realtime/collabSession'
 import { collectPages } from '@/services/export/exportTypes'
 import { renderThumbnail } from '@/services/render/pageRenderer'
@@ -26,7 +28,7 @@ import { PresentView } from '@/components/editor/PresentView'
 import { ExportModal } from '@/components/editor/dialogs/ExportModal'
 import { PublishModal, SaveTemplateModal, ShortcutsModal } from '@/components/editor/dialogs/MiscDialogs'
 import { EraserModal } from '@/components/editor/dialogs/EraserModal'
-import { ReviewModal, SendApprovalModal } from '@/components/editor/approval/ApprovalDialogs'
+import { ApprovalHistoryModal, ReviewModal, SendApprovalModal } from '@/components/editor/approval/ApprovalDialogs'
 import { FindReplaceModal } from '@/components/editor/dialogs/FindReplaceModal'
 import { ShareModal } from '@/components/editor/dialogs/ShareModal'
 import './editor.css'
@@ -41,6 +43,8 @@ export default function EditorActivity() {
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)!
   const loaded = useEditorStore((s) => s.loaded && s.projectId === id)
+  const approvalCanEdit = useApprovalStore((s) => s.approval?.canEdit)
+  const originalAccess = useRef<Access | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [dialog, setDialog] = useState<EditorDialog>(null)
   const leftPanel = useEditorUiStore((s) => s.leftPanel)
@@ -62,14 +66,16 @@ export default function EditorActivity() {
     let cancelled = false
     const store = useEditorStore.getState()
     store.reset()
+    originalAccess.current = null
     void useBrandStore.getState().load().catch(() => undefined)
-    Promise.all([projectApi.get(id), projectApi.loadDesign(id)])
-      .then(([meta, doc]) => {
+    Promise.all([projectApi.get(id), projectApi.loadDesign(id), approvalApi.status(id)])
+      .then(([meta, doc, approval]) => {
         if (cancelled) return
-        useEditorStore.getState().load(doc, { title: meta.title, access: meta.access })
+        originalAccess.current = meta.access
+        useApprovalStore.getState().set(approval)
+        useEditorStore.getState().load(doc, { title: meta.title, access: approval.canEdit ? meta.access : 'VIEWER' })
         useEditorUiStore.getState().setView({ autoFit: true })
-        void useApprovalStore.getState().load(id)
-        collabSession.start(id, user.id, canEditAccess(meta.access))
+        collabSession.start(id, user.id, canEditAccess(meta.access) && approval.canEdit)
       })
       .catch((e) => !cancelled && setError(errorMessage(e)))
     return () => {
@@ -80,6 +86,13 @@ export default function EditorActivity() {
       useEditorStore.getState().reset()
     }
   }, [id, navigate, user.id])
+
+  useEffect(() => {
+    if (!loaded || approvalCanEdit === undefined || originalAccess.current === null) return
+    const access = originalAccess.current
+    useEditorStore.getState().setAccess(approvalCanEdit ? access : 'VIEWER')
+    collabSession.setEditable(canEditAccess(access) && approvalCanEdit)
+  }, [loaded, approvalCanEdit])
 
   // Warn before closing while changes are still on their way to the server.
   useEffect(() => {
@@ -168,6 +181,7 @@ export default function EditorActivity() {
       {eraserId && <EraserModal elementId={eraserId} onClose={() => useEditorUiStore.getState().setEraser(null)} />}
       {dialog === 'approval' && <SendApprovalModal onClose={() => setDialog(null)} />}
       {dialog === 'review' && <ReviewModal onClose={() => setDialog(null)} />}
+      {dialog === 'history' && <ApprovalHistoryModal onClose={() => setDialog(null)} />}
       {dialog === 'find' && <FindReplaceModal onClose={() => setDialog(null)} />}
       {dialog === 'shortcuts' && <ShortcutsModal onClose={() => setDialog(null)} />}
       {presenting && <PresentView doc={stateToDoc(id, useEditorStore.getState())} startIndex={Math.max(0, useEditorStore.getState().pageIds.indexOf(useEditorStore.getState().currentPageId))} onExit={() => setPresenting(false)} />}

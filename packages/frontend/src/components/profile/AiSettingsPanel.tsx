@@ -29,6 +29,9 @@ export function AiSettingsPanel() {
       <p style={{ color: 'var(--ink-2)' }}>
         Bring your own key to power Magic AI: layouts, writing and image tools. Keys are encrypted on the server and never shown again after you save them.
       </p>
+      <p className="field__hint">
+        Image generation can instead use a shared OpenAI-compatible or Hugging Face model configured in the backend environment. When configured, it takes priority over the image provider selected below.
+      </p>
       {active ? (
         <div className="ai-note">
           <span aria-hidden="true">✦</span>

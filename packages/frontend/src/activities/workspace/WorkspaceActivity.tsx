@@ -92,6 +92,9 @@ function TeamPanel({ team, onDelete }: { team: Team; onDelete: () => Promise<voi
       const m = await accountApi.addTeamMember(team.id, email.trim(), role)
       setMembers((cur) => [...(cur ?? []).filter((x) => x.userId !== m.userId), m])
       setEmail('')
+      if (m.editorInvitation?.sent) toast.success(`${m.name} was assigned as an Editor and emailed`)
+      else if (m.editorInvitation) toast.error(`Editor assigned, but the invitation email was not sent: ${m.editorInvitation.problem ?? 'Email is not configured on this server.'}`)
+      else toast.success(`${m.name} was added to the team`)
     } catch (e) {
       toast.error(errorMessage(e))
     } finally {
@@ -110,7 +113,7 @@ function TeamPanel({ team, onDelete }: { team: Team; onDelete: () => Promise<voi
         )}
       </div>
       <p className="field__hint">
-        <b>Maker</b>: designs and sends work for approval. <b>Editor</b>: approves, edits and publishes. <b>Viewer</b>: can only look.
+        <b>Admin</b>: manages team roles. <b>Maker</b>: designs and sends work for approval. <b>Editor</b>: reviews, approves and publishes. <b>Viewer</b>: can only look.
       </p>
       {isOwner && (
         <form
@@ -120,7 +123,8 @@ function TeamPanel({ team, onDelete }: { team: Team; onDelete: () => Promise<voi
             void add()
           }}
         >
-          <TextField label="Add by email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@company.com" />
+          <p className="field__hint">Editors must have a DesignHub account. Assigning the Editor role sends an in-app notification and an email invitation.</p>
+          <TextField label="Assign an existing DesignHub account" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@company.com" />
           <div className="field">
             <label className="field__label" htmlFor="team-role">
               Role
@@ -133,7 +137,7 @@ function TeamPanel({ team, onDelete }: { team: Team; onDelete: () => Promise<voi
             </select>
           </div>
           <Button type="submit" variant="primary" loading={busy} disabled={!email.trim()}>
-            Add member
+            {role === 'EDITOR' ? 'Invite as Editor' : 'Add member'}
           </Button>
         </form>
       )}
@@ -148,7 +152,7 @@ function TeamPanel({ team, onDelete }: { team: Team; onDelete: () => Promise<voi
                 <strong>{m.name}</strong>
                 <div className="field__hint">{m.email}</div>
               </div>
-              <span className="badge" title={ROLE_HELP[m.role]}>{ROLE_LABEL[m.role] ?? m.role}</span>
+              <span className="badge" title={ROLE_HELP[m.role]}>{m.role === 'OWNER' ? 'Admin' : ROLE_LABEL[m.role] ?? m.role}</span>
               {(isOwner || m.userId === me.id) && m.role !== 'OWNER' && (
                 <IconButton
                   icon="close"

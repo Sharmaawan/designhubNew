@@ -3,6 +3,7 @@ import { stateToDoc } from '@/editor/model/wire'
 import { projectApi } from '@/services/api/projectApi'
 import { onLocalChanges, useEditorStore } from '@/stores/editorStore'
 import { useCollabStore } from '@/stores/collabStore'
+import { errorMessage, toast } from '@/stores/toastStore'
 import type { DesignOp, WireElement } from './wireOps'
 
 const FLUSH_DELAY = 350
@@ -25,6 +26,7 @@ export class EditorSync {
   private timer: ReturnType<typeof setTimeout> | undefined
   private unsubscribe: (() => void) | null = null
   private offlineSince = 0
+  private recovery: Promise<void> | null = null
   awaiting = 0
 
   private readonly projectId: number
@@ -128,15 +130,31 @@ export class EditorSync {
     }
   }
 
+  recover() {
+    if (this.awaiting === 0 && !this.dirty) return Promise.resolve()
+    if (this.recovery) return this.recovery
+    useCollabStore.getState().setSaveState('saving')
+    const recovery = this.restSave().finally(() => {
+      if (this.recovery === recovery) this.recovery = null
+    })
+    this.recovery = recovery
+    return recovery
+  }
+
   private async restSave() {
     try {
       await projectApi.saveDesign(this.projectId, stateToDoc(this.projectId, useEditorStore.getState()))
       this.clear()
+      this.awaiting = 0
       this.offlineSince = 0
       useCollabStore.getState().setSaveState('saved')
-    } catch {
+    } catch (error) {
       useCollabStore.getState().setSaveState('error')
-      this.timer = setTimeout(() => this.flush(), 5000)
+      toast.error(`Your design could not be saved. ${errorMessage(error)}`)
+      this.timer = setTimeout(() => {
+        if (this.awaiting > 0) void this.recover()
+        else this.flush()
+      }, 5000)
     }
   }
 

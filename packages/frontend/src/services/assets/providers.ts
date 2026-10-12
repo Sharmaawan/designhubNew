@@ -1,3 +1,5 @@
+import { get } from '@/services/api/http'
+
 /**
  * Stock media providers share one small interface, so another source (Unsplash, Pexels, a company DAM…)
  * is added by implementing `search` and registering it in the panel.
@@ -48,11 +50,11 @@ function openverse(id: string, label: string, extra: Record<string, string>): St
     id,
     label,
     async search(query, page, signal) {
-      const params = new URLSearchParams({ q: query || 'abstract', page: String(page), page_size: '24', license_type: 'commercial', mature: 'false', ...extra })
-      const res = await fetch(`https://api.openverse.org/v1/images/?${params}`, { signal })
-      if (res.status === 429) throw new Error('The photo library is busy right now. Try again in a minute.')
-      if (!res.ok) throw new Error('The photo library could not be reached.')
-      const data = (await res.json()) as OpenverseResponse
+      const data = await get<OpenverseResponse>(
+        '/api/stock/images',
+        { q: query || 'abstract', page, ...extra },
+        signal,
+      )
       return {
         hasMore: page < data.page_count,
         items: data.results.map((r) => ({

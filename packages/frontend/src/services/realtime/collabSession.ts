@@ -3,7 +3,7 @@ import { sharingApi } from '@/services/api/sharingApi'
 import { useApprovalStore } from '@/stores/approvalStore'
 import { useCollabStore } from '@/stores/collabStore'
 import { useEditorStore } from '@/stores/editorStore'
-import { toast } from '@/stores/toastStore'
+import { errorMessage, toast } from '@/stores/toastStore'
 import type { CommentItem, PresenceUser } from '@/models/api'
 import { throttle, uid } from '@/utils/common'
 import { EditorSync } from './editorSync'
@@ -47,6 +47,7 @@ class CollabSession {
         const msg = (b as { message?: string }).message ?? 'A change could not be saved'
         toast.error(msg)
         useCollabStore.getState().setSaveState('error')
+        void this.sync?.recover()
       }),
     )
     this.cleanups.push(realtime.onConnect(() => realtime.publish(`/app/project/${projectId}/join`, {})))
@@ -73,12 +74,23 @@ class CollabSession {
     this.sync?.flush()
   }
 
+  setEditable(canEdit: boolean) {
+    if (this.canEdit === canEdit) return
+    this.sync?.stop()
+    this.sync = null
+    this.canEdit = canEdit
+    if (canEdit && this.projectId) {
+      this.sync = new EditorSync(this.projectId, (op) => this.sendOp(op))
+      this.sync.start()
+    }
+  }
+
   private sendOp(op: DesignOp): boolean {
     const ok = realtime.publish(`/app/project/${this.projectId}/ops`, { ...op, clientId: this.clientId })
     if (ok) {
       clearTimeout(this.saveWatchdog)
       this.saveWatchdog = setTimeout(() => {
-        if ((this.sync?.awaiting ?? 0) > 0) useCollabStore.getState().setSaveState('error')
+        if ((this.sync?.awaiting ?? 0) > 0) void this.sync?.recover()
       }, 10000)
     }
     return ok
@@ -130,7 +142,9 @@ class CollabSession {
     const collab = useCollabStore.getState()
     if (e.type === 'COMMENT_UPSERT') collab.upsertComment(e.payload as CommentItem)
     else if (e.type === 'COMMENT_DELETE') collab.removeComment(e.payload as number)
-    else if (e.type === 'APPROVAL_CHANGED') void useApprovalStore.getState().load(this.projectId)
+    else if (e.type === 'APPROVAL_CHANGED') {
+      void useApprovalStore.getState().load(this.projectId).catch((error) => toast.error(`Could not refresh approval status: ${errorMessage(error)}`))
+    }
   }
 
   get editable() {

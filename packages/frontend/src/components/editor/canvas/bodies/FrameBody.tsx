@@ -51,7 +51,7 @@ function clipFor(d: FrameData) {
 }
 
 /** A frame clips its image to a shape. The image is positioned with scale and offset, never destructively cropped. */
-export function FrameBody({ data: d }: { data: FrameData }) {
+export function FrameBody({ data: d, onBrowse }: { data: FrameData; onBrowse?: () => void }) {
   const img = useLoadedImage(d.src)
   let imageProps: { x: number; y: number; width: number; height: number } | null = null
   if (img) {
@@ -75,7 +75,10 @@ export function FrameBody({ data: d }: { data: FrameData }) {
           fontSize={Math.max(14, Math.min(d.width, d.height) * 0.07)}
           fontFamily="Inter Tight"
           fill="#868B95"
-          listening={false}
+          listening={!!onBrowse}
+          onClick={onBrowse}
+          onTap={onBrowse}
+          cursor={onBrowse ? 'pointer' : undefined}
         />
       )}
     </Group>

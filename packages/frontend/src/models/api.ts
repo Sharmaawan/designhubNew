@@ -128,6 +128,11 @@ export interface TeamMember {
   email: string
   avatarUrl?: string
   role: Access
+  editorInvitation?: {
+    sent: boolean
+    emailConfigured: boolean
+    problem?: string
+  }
 }
 
 export interface BrandColor {

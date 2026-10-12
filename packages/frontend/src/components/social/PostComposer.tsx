@@ -26,7 +26,7 @@ function toLocalInput(d: Date) {
 }
 
 export function PostComposer({ projectId, mediaUrl: initialMedia, caption: initialCaption, onClose, onCreated }: Props) {
-  const { accounts, load, loaded, replacePost } = useSocialStore()
+  const { platforms, accounts, load, loaded, replacePost } = useSocialStore()
   const [accountId, setAccountId] = useState('')
   const [caption, setCaption] = useState(initialCaption ?? '')
   const [mediaUrl, setMediaUrl] = useState(initialMedia ?? '')
@@ -36,6 +36,7 @@ export function PostComposer({ projectId, mediaUrl: initialMedia, caption: initi
   const [matches, setMatches] = useState<User[]>([])
   const [uploading, setUploading] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [connecting, setConnecting] = useState<string | null>(null)
 
   useEffect(() => {
     if (!loaded) void load()
@@ -54,6 +55,7 @@ export function PostComposer({ projectId, mediaUrl: initialMedia, caption: initi
 
   const account = accounts.find((a) => String(a.id) === accountId)
   const limit = account ? CAPTION_LIMIT[account.platform] : undefined
+  const overLimit = limit !== undefined && caption.length > limit
 
   async function upload(file: File | undefined) {
     if (!file) return
@@ -67,19 +69,44 @@ export function PostComposer({ projectId, mediaUrl: initialMedia, caption: initi
     }
   }
 
-  async function create(): Promise<void> {
+  async function connect(platform: string) {
+    setConnecting(platform)
+    try {
+      window.location.href = (await socialApi.connect(platform)).url
+    } catch (e) {
+      toast.error(errorMessage(e))
+      setConnecting(null)
+    }
+  }
+
+  async function create(publishNow = false): Promise<void> {
     setBusy(true)
     try {
-      const post = await socialApi.createPost({
+      const draft = await socialApi.createPost({
         accountId: Number(accountId),
         projectId,
         caption,
         mediaUrl: mediaUrl || undefined,
-        scheduledAt: when ? new Date(when).toISOString() : undefined,
+        scheduledAt: !publishNow && when ? new Date(when).toISOString() : undefined,
         reviewerId: reviewer?.id,
       })
-      replacePost(post)
-      toast.success(reviewer ? 'Post saved as a draft. Submit it for approval when you are ready.' : 'Post saved as a draft.')
+      if (publishNow) {
+        replacePost(draft)
+        try {
+          const published = await socialApi.publish(draft.id)
+          replacePost(published)
+          if (published.status === 'PUBLISHED') {
+            toast.success(`Published to ${PLATFORM_LABEL[published.platform] ?? published.platform}.`)
+          } else {
+            toast.error(published.error || 'The post could not be published. You can retry from Publishing.')
+          }
+        } catch (error) {
+          toast.error(`Saved as a draft, but it could not be published. ${errorMessage(error)}`)
+        }
+      } else {
+        replacePost(draft)
+        toast.success(reviewer ? 'Post saved as a draft. Submit it for approval when you are ready.' : 'Post saved as a draft.')
+      }
       onCreated?.()
       onClose()
     } catch (e) {
@@ -90,8 +117,31 @@ export function PostComposer({ projectId, mediaUrl: initialMedia, caption: initi
 
   if (loaded && accounts.length === 0) {
     return (
-      <Modal title="New post" onClose={onClose} footer={<Button onClick={onClose}>Close</Button>}>
-        <p style={{ color: 'var(--ink-2)' }}>Connect a social account first. Open Publishing, then choose Accounts.</p>
+      <Modal
+        title="New post"
+        onClose={onClose}
+        footer={<Button variant="ghost" onClick={onClose}>Close</Button>}
+      >
+        <p style={{ color: 'var(--ink-2)', marginTop: 0 }}>Connect a social account to continue. Choose a platform below:</p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+          {platforms.map((item) => (
+            <section key={item.platform} style={{ display: 'grid', gap: 8, padding: 12, border: '1px solid var(--line)', borderRadius: 12 }}>
+              <strong>{PLATFORM_LABEL[item.platform] ?? item.platform}</strong>
+              <Button
+                size="sm"
+                variant={item.configured ? 'primary' : 'default'}
+                disabled={!item.configured}
+                loading={connecting === item.platform}
+                onClick={() => void connect(item.platform)}
+              >
+                {item.configured ? 'Connect account' : 'Setup required'}
+              </Button>
+            </section>
+          ))}
+        </div>
+        {platforms.some((item) => !item.configured) && (
+          <p className="field__hint" style={{ marginBottom: 0 }}>Some connections need provider developer-app credentials configured by the server administrator.</p>
+        )}
       </Modal>
     )
   }
@@ -107,8 +157,18 @@ export function PostComposer({ projectId, mediaUrl: initialMedia, caption: initi
           <Button variant="ghost" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button variant="primary" loading={busy} disabled={!accountId || (limit !== undefined && caption.length > limit)} onClick={() => void create()}>
+          <Button loading={busy} disabled={!accountId || uploading || overLimit} onClick={() => void create()}>
             Save draft
+          </Button>
+          <Button
+            variant="primary"
+            icon="send"
+            loading={busy}
+            disabled={!accountId || uploading || !!reviewer || overLimit}
+            title={reviewer ? 'Posts requiring review cannot be published immediately.' : undefined}
+            onClick={() => void create(true)}
+          >
+            Publish now
           </Button>
         </>
       }
@@ -128,6 +188,7 @@ export function PostComposer({ projectId, mediaUrl: initialMedia, caption: initi
         hint={limit ? `${caption.length} of ${limit} characters` : `${caption.length} characters`}
         error={limit !== undefined && caption.length > limit ? `This is ${caption.length - limit} characters over the limit` : undefined}
       />
+      <p className="field__hint">Publish now sends this post directly to the selected social account. Save draft keeps it in Publishing without posting.</p>
       <div className="field">
         <span className="field__label">Image</span>
         {mediaUrl ? (

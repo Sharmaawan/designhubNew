@@ -36,6 +36,23 @@ def to_png(img: Image.Image) -> bytes:
     return buf.getvalue()
 
 
+def refine_flat_edge_background(original: Image.Image, result: Image.Image) -> Image.Image:
+    """Remove large, near-white regions connected to an image edge without punching holes in enclosed artwork."""
+    rgb = np.array(original.convert("RGB"))
+    rgba = np.array(result.convert("RGBA"))
+    light = (rgb.min(axis=2) >= 215) & ((rgb.max(axis=2) - rgb.min(axis=2)) <= 50)
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(light.astype(np.uint8), 8)
+    alpha = rgba[..., 3]
+    min_area = rgb.shape[0] * rgb.shape[1] * 0.01
+    for label in range(1, count):
+        x, y, width, height, area = stats[label]
+        touches_edge = x == 0 or y == 0 or x + width == rgb.shape[1] or y + height == rgb.shape[0]
+        if area >= min_area and touches_edge:
+            alpha[labels == label] = 0
+    rgba[..., 3] = alpha
+    return Image.fromarray(rgba)
+
+
 @lru_cache(maxsize=1)
 def rembg_session():
     from rembg import new_session
@@ -59,7 +76,8 @@ def health():
 def remove_background(image: UploadFile = File(...)):
     from rembg import remove
 
-    out = remove(read_image(image), session=rembg_session())
+    source = read_image(image)
+    out = refine_flat_edge_background(source, remove(source, session=rembg_session()))
     return Response(to_png(out), media_type="image/png")
 
 

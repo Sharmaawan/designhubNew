@@ -7,7 +7,6 @@ import { errorMessage, toast } from '@/stores/toastStore'
 import { Button } from '@/components/ui/Button'
 import { Avatar, TextField } from '@/components/ui/Fields'
 import { Icon } from '@/components/ui/Icon'
-import { AiSettingsPanel } from '@/components/profile/AiSettingsPanel'
 import { EmailSettingsPanel } from '@/components/profile/EmailSettingsPanel'
 import '@/activities/brand/brand.css'
 import './profile.css'
@@ -107,7 +106,6 @@ export default function ProfileActivity() {
       </section>
 
       <EmailSettingsPanel />
-      <AiSettingsPanel />
     </div>
   )
 }

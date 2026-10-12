@@ -5,9 +5,13 @@ import { errorMessage } from '@/stores/toastStore'
 
 interface GoogleId {
   accounts: {
-    id: {
-      initialize: (o: { client_id: string; callback: (r: { credential: string }) => void; ux_mode?: string }) => void
-      renderButton: (el: HTMLElement, o: Record<string, unknown>) => void
+    oauth2: {
+      initTokenClient: (o: {
+        client_id: string
+        scope: string
+        prompt: string
+        callback: (r: { access_token?: string; error?: string; error_description?: string }) => void
+      }) => { requestAccessToken: () => void }
     }
   }
 }
@@ -34,8 +38,9 @@ function loadGoogleScript(): Promise<void> {
 
 /** Google's own button, rendered only when the server has a client id. Sign-in then goes through our API. */
 export function GoogleButton({ onSignedIn, onError }: { onSignedIn: () => void; onError: (message: string) => void }) {
-  const host = useRef<HTMLDivElement>(null)
+  const tokenClient = useRef<{ requestAccessToken: () => void } | null>(null)
   const [clientId, setClientId] = useState<string | null | undefined>(undefined)
+  const [ready, setReady] = useState(false)
   const finish = useAuthStore((s) => s.finishGoogle)
 
   useEffect(() => {
@@ -46,16 +51,22 @@ export function GoogleButton({ onSignedIn, onError }: { onSignedIn: () => void; 
   }, [])
 
   useEffect(() => {
-    if (!clientId || !host.current) return
+    if (!clientId) return
     let live = true
     loadGoogleScript()
       .then(() => {
-        if (!live || !host.current || !window.google) return
-        window.google.accounts.id.initialize({
+        if (!live || !window.google) return
+        tokenClient.current = window.google.accounts.oauth2.initTokenClient({
           client_id: clientId,
-          callback: (r) => {
+          scope: 'openid email profile',
+          prompt: 'select_account',
+          callback: (response) => {
+            if (response.error || !response.access_token) {
+              onError(response.error_description ?? 'Google sign-in was not completed. Please choose an account and try again.')
+              return
+            }
             authApi
-              .google(r.credential)
+              .google(response.access_token)
               .then((res) => {
                 finish(res)
                 onSignedIn()
@@ -63,11 +74,12 @@ export function GoogleButton({ onSignedIn, onError }: { onSignedIn: () => void; 
               .catch((e) => onError(errorMessage(e)))
           },
         })
-        window.google.accounts.id.renderButton(host.current, { theme: 'outline', size: 'large', width: 376, text: 'continue_with', shape: 'rectangular', logo_alignment: 'left' })
+        setReady(true)
       })
       .catch((e) => onError(errorMessage(e)))
     return () => {
       live = false
+      tokenClient.current = null
     }
   }, [clientId, finish, onSignedIn, onError])
 
@@ -82,7 +94,15 @@ export function GoogleButton({ onSignedIn, onError }: { onSignedIn: () => void; 
   return (
     <>
       <div className="auth__divider">or</div>
-      <div ref={host} style={{ display: 'grid', justifyItems: 'center', minHeight: 44 }} />
+      <button
+        type="button"
+        className="btn btn--block btn--lg"
+        disabled={!ready}
+        onClick={() => tokenClient.current?.requestAccessToken()}
+      >
+        <span aria-hidden="true" style={{ color: '#4285f4', fontSize: 20, fontWeight: 700 }}>G</span>
+        Continue with Google
+      </button>
     </>
   )
 }

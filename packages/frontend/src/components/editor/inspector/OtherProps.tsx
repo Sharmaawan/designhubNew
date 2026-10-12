@@ -1,16 +1,38 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { AudioElement, ChartElement, ChartKind, FrameElement, IconElement, TableElement, VideoElement } from '@/models/design'
 import { updateElements } from '@/editor/actions/elementActions'
 import { mediaRegistry } from '@/components/editor/canvas/bodies/mediaRegistry'
+import { contentApi } from '@/services/api/contentApi'
 import { exportTableXlsx } from '@/services/export/tableXlsx'
-import { toast } from '@/stores/toastStore'
+import { errorMessage, toast } from '@/stores/toastStore'
 import { Button, IconButton } from '@/components/ui/Button'
 import { ColorField, Group, NumField, Row, SliderField } from './controls'
 
 export function FrameProps({ elements }: { elements: FrameElement[] }) {
   const ids = elements.map((e) => e.id)
   const d = elements[0]!.data
+  const fileInput = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
   const set = (patch: Partial<FrameElement['data']>, key?: string) => updateElements(ids, patch, { coalesceKey: key ? `frame-${key}` : undefined })
+
+  async function chooseImage(file?: File) {
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      toast.error('Choose an image file.')
+      return
+    }
+    setUploading(true)
+    try {
+      const asset = await contentApi.upload(file)
+      set({ src: asset.url, imageScale: 1, imageOffsetX: 0, imageOffsetY: 0 })
+    } catch (error) {
+      toast.error(errorMessage(error))
+    } finally {
+      setUploading(false)
+      if (fileInput.current) fileInput.current.value = ''
+    }
+  }
+
   return (
     <>
       <Group title="Frame">
@@ -24,6 +46,16 @@ export function FrameProps({ elements }: { elements: FrameElement[] }) {
         <Row label="Background">
           <ColorField ariaLabel="Frame background" value={d.fill} onChange={(c) => set({ fill: c }, 'fill')} />
         </Row>
+        <input
+          ref={fileInput}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={(event) => void chooseImage(event.target.files?.[0])}
+        />
+        <Button size="sm" icon="upload" loading={uploading} disabled={uploading} onClick={() => fileInput.current?.click()}>
+          {d.src ? 'Replace image' : 'Browse image'}
+        </Button>
       </Group>
       {d.src ? (
         <Group title="Image inside">
@@ -42,7 +74,7 @@ export function FrameProps({ elements }: { elements: FrameElement[] }) {
         </Group>
       ) : (
         <Group>
-          <p className="field__hint">Drag a photo from the side panel onto this frame to fill it.</p>
+          <p className="field__hint">Browse an image above or drag a photo from the side panel onto this frame.</p>
         </Group>
       )}
     </>

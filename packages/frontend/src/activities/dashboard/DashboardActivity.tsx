@@ -71,7 +71,10 @@ export default function DashboardActivity() {
     <div className="page__inner">
       <section className="stage">
         <div className="stage__copy">
-          <h1>Hi {user.name.split(' ')[0]}, what are we making today?</h1>
+          <span className="stage__eyebrow">Your creative studio</span>
+          <h1>
+            Hi <span className="stage__name">{user.name.split(' ')[0]}</span>, what are we making today?
+          </h1>
           <p>Pick a size to start fresh, or open something you already began.</p>
         </div>
         <CreateStrip onPick={(p) => void create(p)} onCustom={() => setCreating({ title: 'Untitled design', width: 1080, height: 1080 })} />

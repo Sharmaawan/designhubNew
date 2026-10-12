@@ -10,7 +10,7 @@ export const ROLE_LABEL: Record<string, string> = {
   COMMENTER: 'Commenter',
   MAKER: 'Maker',
   EDITOR: 'Editor',
-  OWNER: 'Owner',
+  OWNER: 'Admin',
 }
 
 export const ROLE_HELP: Record<string, string> = {
@@ -18,4 +18,5 @@ export const ROLE_HELP: Record<string, string> = {
   COMMENTER: 'Can view and comment',
   MAKER: 'Designs and sends work for approval',
   EDITOR: 'Approves, edits and publishes',
+  OWNER: 'Manages team members and roles',
 }

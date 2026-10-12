@@ -14,7 +14,7 @@ import { Avatar } from '@/components/ui/Fields'
 import { Menu } from '@/components/ui/Menu'
 import { clamp } from '@/utils/common'
 
-export type EditorDialog = 'export' | 'share' | 'publish' | 'shortcuts' | 'template' | 'find' | 'approval' | 'review' | null
+export type EditorDialog = 'export' | 'share' | 'publish' | 'shortcuts' | 'template' | 'find' | 'approval' | 'review' | 'history' | null
 
 const SAVE_LABEL = { saved: 'All changes saved', saving: 'Saving…', offline: 'Offline, retrying', error: 'Could not save' } as const
 

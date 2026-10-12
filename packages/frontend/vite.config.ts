@@ -3,7 +3,22 @@ import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      name: 'canonical-localhost-origin',
+      configureServer(server) {
+        server.middlewares.use((req, res, next) => {
+          if (req.headers.host?.split(':')[0] === '127.0.0.1') {
+            res.writeHead(302, { Location: `http://localhost:5173${req.url ?? '/'}` })
+            res.end()
+            return
+          }
+          next()
+        })
+      },
+    },
+  ],
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },

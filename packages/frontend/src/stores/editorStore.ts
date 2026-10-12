@@ -36,6 +36,7 @@ interface EditorState extends DocState {
   load: (doc: DesignDocument, meta: { title: string; access: Access }) => void
   reset: () => void
   setTitle: (title: string) => void
+  setAccess: (access: Access) => void
   setCurrentPage: (id: string) => void
   select: (ids: string[], opts?: { additive?: boolean; exact?: boolean }) => void
   commit: (changes: Change[], opts?: { coalesceKey?: string; record?: boolean }) => void
@@ -110,6 +111,7 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
   reset: () => set({ ...empty, loaded: false, projectId: 0, title: '', currentPageId: '', selection: [], undoStack: [], redoStack: [] }),
 
   setTitle: (title) => set({ title }),
+  setAccess: (access) => set({ access }),
 
   setCurrentPage: (id) => {
     if (get().pages[id]) set({ currentPageId: id, selection: [] })

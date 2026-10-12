@@ -28,6 +28,8 @@ export function SelectionLayer({ stage, guides, zoom, pageW, pageH, marquee }: P
   const onlyLines = !!single && single.type === 'shape' && (single.data.shape === 'line' || single.data.shape === 'arrow')
   const isText = !!single && single.type === 'text'
   const isImageLike = !!single && (single.type === 'image' || single.type === 'video' || single.type === 'icon' || single.type === 'frame')
+  const groupIds = selection.map((id) => elements[id]?.data.groupId)
+  const isGrouped = groupIds.length > 1 && groupIds[0] !== undefined && groupIds.every((id) => id === groupIds[0])
 
   useEffect(() => {
     const tr = trRef.current
@@ -91,7 +93,7 @@ export function SelectionLayer({ stage, guides, zoom, pageW, pageH, marquee }: P
         rotateEnabled
         rotationSnaps={[0, 45, 90, 135, 180, 225, 270, 315]}
         rotationSnapTolerance={4}
-        keepRatio={isImageLike}
+        keepRatio={isImageLike || isGrouped}
         flipEnabled={false}
         enabledAnchors={
           onlyLines

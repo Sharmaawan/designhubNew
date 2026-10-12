@@ -1,6 +1,19 @@
 import { get, post } from './http'
 
-export type ApprovalStatus = 'NO_TEAM' | 'NONE' | 'PENDING' | 'APPROVED' | 'CHANGES_REQUESTED' | 'EXPIRED'
+export type ApprovalStatus = 'NO_TEAM' | 'NEEDS_TEAM' | 'NONE' | 'PENDING' | 'APPROVED' | 'CHANGES_REQUESTED' | 'EXPIRED'
+
+export interface ApprovalHistoryEntry {
+  id: number
+  status: string
+  submittedById: number
+  submittedBy: string
+  submittedAt: string
+  message?: string
+  reviewedById?: number
+  reviewedBy?: string
+  reviewedAt?: string
+  feedback?: string
+}
 
 export interface ApprovalState {
   status: ApprovalStatus
@@ -16,9 +29,12 @@ export interface ApprovalState {
   decidedAt?: string
   requestedAt?: string
   canSubmit: boolean
+  canSetupTeam: boolean
   canReview: boolean
   canPublish: boolean
+  canEdit: boolean
   reviewers: string[]
+  history: ApprovalHistoryEntry[]
 }
 
 export interface EmailDelivery {

@@ -5,6 +5,8 @@ export const socialApi = {
   platforms: () => get<SocialPlatform[]>('/api/social/platforms'),
   accounts: () => get<SocialAccount[]>('/api/social/accounts'),
   connect: (platform: string) => post<{ url: string }>(`/api/social/accounts/connect/${platform}`),
+  pendingFacebookPages: (ticket: string) => get<{ id: string; name: string }[]>(`/api/social/accounts/pending/${encodeURIComponent(ticket)}`),
+  selectFacebookPage: (ticket: string, pageId: string) => post<SocialAccount>(`/api/social/accounts/pending/${encodeURIComponent(ticket)}/select`, { pageId }),
   disconnect: (id: number) => del(`/api/social/accounts/${id}`),
   posts: () => get<SocialPost[]>('/api/social/posts'),
   createPost: (data: {
