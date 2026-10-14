@@ -228,6 +228,10 @@ async function createMissingTables() {
   ]
 
   for (const statement of schema) await db().query(statement)
+  await addMissingColumns('social_accounts', [
+    ['facebook_login_id', 'VARCHAR(120) NULL'],
+    ['facebook_login_name', 'VARCHAR(160) NULL'],
+  ])
   await db().query(
     `INSERT IGNORE INTO plans (code, name, price_cents, max_projects, storage_bytes, ai_requests_per_month, exports_per_month, team_seats)
      VALUES ('free', 'Free', 0, 10, 1073741824, 20, 30, 1),
@@ -254,6 +258,17 @@ async function createMissingTables() {
     )
   }
   await seedTemplates()
+}
+
+async function addMissingColumns(table: string, columns: [string, string][]) {
+  const [existing] = await db().query<RowDataPacket[]>(
+    'SELECT COLUMN_NAME AS name FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?',
+    [database, table],
+  )
+  const present = new Set((existing as RowDataPacket[]).map((row) => String(row.name)))
+  for (const [name, definition] of columns) {
+    if (!present.has(name)) await db().query(`ALTER TABLE \`${table}\` ADD COLUMN \`${name}\` ${definition}`)
+  }
 }
 
 function escapeXml(value: string): string {
@@ -450,8 +465,8 @@ async function seedTemplates() {
       }],
     }
     await db().query(
-      `INSERT INTO templates (category_id, title, width, height, thumbnail, design, tags, published)
-       VALUES (?, ?, ?, ?, ?, ?, ?, TRUE)`,
+      `INSERT INTO templates (created_at, category_id, title, width, height, thumbnail, design, tags, published)
+       VALUES (CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, TRUE)`,
       [categoryId, template.title, template.width, template.height, thumbnail, JSON.stringify(design), template.tags],
     )
   }
