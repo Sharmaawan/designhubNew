@@ -40,8 +40,9 @@ export default function SocialActivity() {
   const [approvalBusy, setApprovalBusy] = useState(false)
   const [composing, setComposing] = useState(false)
   const [connecting, setConnecting] = useState<string | null>(null)
-  const [pendingPages, setPendingPages] = useState<{ ticket: string; pages: { id: string; name: string }[] } | null>(null)
-  const [selectingPage, setSelectingPage] = useState<string | null>(null)
+  const [pendingPages, setPendingPages] = useState<{ ticket: string; pages: { id: string; name: string; loginName: string | null }[] } | null>(null)
+  const [pickedPageIds, setPickedPageIds] = useState<string[]>([])
+  const [savingPages, setSavingPages] = useState(false)
 
   useEffect(() => {
     load().catch((e) => setError(errorMessage(e)))
@@ -69,7 +70,10 @@ export default function SocialActivity() {
     if (ticket) {
       setTab('accounts')
       void socialApi.pendingFacebookPages(ticket)
-        .then((pages) => setPendingPages({ ticket, pages }))
+        .then((pages) => {
+          setPickedPageIds([])
+          setPendingPages({ ticket, pages })
+        })
         .catch((error) => toast.error(errorMessage(error)))
     }
     if (connected || err || ticket) setParams({}, { replace: true })
@@ -96,18 +100,22 @@ export default function SocialActivity() {
     }
   }
 
-  async function chooseFacebookPage(pageId: string) {
-    if (!pendingPages) return
-    setSelectingPage(pageId)
+  function togglePage(pageId: string) {
+    setPickedPageIds((current) => (current.includes(pageId) ? current.filter((id) => id !== pageId) : [...current, pageId]))
+  }
+
+  async function connectPickedPages() {
+    if (!pendingPages || !pickedPageIds.length) return
+    setSavingPages(true)
     try {
-      const account = await socialApi.selectFacebookPage(pendingPages.ticket, pageId)
+      const saved = await socialApi.selectFacebookPages(pendingPages.ticket, pickedPageIds)
       await load()
       setPendingPages(null)
-      toast.success(`${account.displayName} is connected`)
+      toast.success(saved.length === 1 ? `${saved[0]!.displayName} is connected` : `${saved.length} Facebook Pages are connected`)
     } catch (e) {
       toast.error(errorMessage(e))
     } finally {
-      setSelectingPage(null)
+      setSavingPages(false)
     }
   }
 
@@ -261,6 +269,7 @@ export default function SocialActivity() {
                         <strong>{a.displayName}</strong>
                         <div className="field__hint">
                           Connected {timeAgo(a.connectedAt)}
+                          {a.loginName && ` · Login: ${a.loginName}`}
                           {a.expired && ' · Expired, reconnect'}
                         </div>
                       </div>
@@ -279,22 +288,43 @@ export default function SocialActivity() {
       {composing && <PostComposer onClose={() => setComposing(false)} />}
       {pendingPages && (
         <Modal
-          title="Choose a Facebook Page"
-          onClose={() => setPendingPages(null)}
-          footer={<Button variant="ghost" onClick={() => setPendingPages(null)}>Cancel</Button>}
+          title="Choose Facebook Pages"
+          onClose={() => !savingPages && setPendingPages(null)}
+          locked={savingPages}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setPendingPages(null)} disabled={savingPages}>Cancel</Button>
+              <Button
+                variant="primary"
+                loading={savingPages}
+                disabled={!pickedPageIds.length}
+                onClick={() => void connectPickedPages()}
+              >
+                {pickedPageIds.length ? `Connect ${pickedPageIds.length} Page${pickedPageIds.length === 1 ? '' : 's'}` : 'Connect Pages'}
+              </Button>
+            </>
+          }
         >
-          <p style={{ color: 'var(--ink-2)', marginTop: 0 }}>Select the Page you want to connect. You can connect other Pages later with “Add another.”</p>
+          <p style={{ color: 'var(--ink-2)', marginTop: 0 }}>
+            Select the Pages you want to connect. Pages from another Facebook login can be added with “Add another.”
+          </p>
+          {pendingPages.pages[0]?.loginName && (
+            <p className="field__hint">Pages granted by {pendingPages.pages[0].loginName}</p>
+          )}
           <div style={{ display: 'grid', gap: 8 }}>
             {pendingPages.pages.map((page) => (
-              <Button
+              <label
                 key={page.id}
-                block
-                loading={selectingPage === page.id}
-                disabled={selectingPage !== null}
-                onClick={() => void chooseFacebookPage(page.id)}
+                style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '10px 12px', border: '1px solid var(--line)', borderRadius: 12, cursor: 'pointer' }}
               >
+                <input
+                  type="checkbox"
+                  checked={pickedPageIds.includes(page.id)}
+                  onChange={() => togglePage(page.id)}
+                  disabled={savingPages}
+                />
                 {page.name}
-              </Button>
+              </label>
             ))}
           </div>
         </Modal>

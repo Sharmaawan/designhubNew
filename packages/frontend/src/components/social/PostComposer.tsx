@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { User } from '@/models/api'
+import type { SocialPost, User } from '@/models/api'
 import { authApi } from '@/services/api/authApi'
 import { contentApi } from '@/services/api/contentApi'
 import { socialApi } from '@/services/api/socialApi'
@@ -7,7 +7,7 @@ import { useSocialStore } from '@/stores/socialStore'
 import { errorMessage, toast } from '@/stores/toastStore'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
-import { SelectField, TextAreaField, TextField, Avatar } from '@/components/ui/Fields'
+import { TextAreaField, TextField, Avatar } from '@/components/ui/Fields'
 import { Icon } from '@/components/ui/Icon'
 import { PLATFORM_LABEL, CAPTION_LIMIT } from './platforms'
 
@@ -27,7 +27,7 @@ function toLocalInput(d: Date) {
 
 export function PostComposer({ projectId, mediaUrl: initialMedia, caption: initialCaption, onClose, onCreated }: Props) {
   const { platforms, accounts, load, loaded, replacePost } = useSocialStore()
-  const [accountId, setAccountId] = useState('')
+  const [accountIds, setAccountIds] = useState<string[]>([])
   const [caption, setCaption] = useState(initialCaption ?? '')
   const [mediaUrl, setMediaUrl] = useState(initialMedia ?? '')
   const [when, setWhen] = useState('')
@@ -42,8 +42,8 @@ export function PostComposer({ projectId, mediaUrl: initialMedia, caption: initi
     if (!loaded) void load()
   }, [loaded, load])
   useEffect(() => {
-    if (!accountId && accounts[0]) setAccountId(String(accounts[0].id))
-  }, [accounts, accountId])
+    if (!accountIds.length && accounts[0]) setAccountIds([String(accounts[0].id)])
+  }, [accounts, accountIds])
   useEffect(() => {
     if (reviewerQuery.trim().length < 2) {
       setMatches([])
@@ -53,9 +53,15 @@ export function PostComposer({ projectId, mediaUrl: initialMedia, caption: initi
     return () => clearTimeout(t)
   }, [reviewerQuery])
 
-  const account = accounts.find((a) => String(a.id) === accountId)
-  const limit = account ? CAPTION_LIMIT[account.platform] : undefined
+  const selectedAccounts = accounts.filter((a) => accountIds.includes(String(a.id)))
+  // The caption must fit every selected account, so the strictest limit applies.
+  const limits = selectedAccounts.map((a) => CAPTION_LIMIT[a.platform]).filter((value): value is number => value !== undefined)
+  const limit = limits.length ? Math.min(...limits) : undefined
   const overLimit = limit !== undefined && caption.length > limit
+
+  function toggleAccount(id: string) {
+    setAccountIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]))
+  }
 
   async function upload(file: File | undefined) {
     if (!file) return
@@ -79,40 +85,50 @@ export function PostComposer({ projectId, mediaUrl: initialMedia, caption: initi
     }
   }
 
+  // One post per selected account. A failure on one account does not stop the others.
   async function create(publishNow = false): Promise<void> {
     setBusy(true)
-    try {
-      const draft = await socialApi.createPost({
-        accountId: Number(accountId),
-        projectId,
-        caption,
-        mediaUrl: mediaUrl || undefined,
-        scheduledAt: !publishNow && when ? new Date(when).toISOString() : undefined,
-        reviewerId: reviewer?.id,
-      })
-      if (publishNow) {
-        replacePost(draft)
-        try {
-          const published = await socialApi.publish(draft.id)
-          replacePost(published)
-          if (published.status === 'PUBLISHED') {
-            toast.success(`Published to ${PLATFORM_LABEL[published.platform] ?? published.platform}.`)
-          } else {
-            toast.error(published.error || 'The post could not be published. You can retry from Publishing.')
-          }
-        } catch (error) {
-          toast.error(`Saved as a draft, but it could not be published. ${errorMessage(error)}`)
-        }
-      } else {
-        replacePost(draft)
-        toast.success(reviewer ? 'Post saved as a draft. Submit it for approval when you are ready.' : 'Post saved as a draft.')
+    const published: string[] = []
+    const failed: string[] = []
+    let created = 0
+    const scheduledAt = !publishNow && when ? new Date(when).toISOString() : undefined
+    for (const target of selectedAccounts) {
+      const label = `${PLATFORM_LABEL[target.platform] ?? target.platform} · ${target.displayName}`
+      let draft: SocialPost
+      try {
+        draft = await socialApi.createPost({
+          accountId: target.id,
+          projectId,
+          caption,
+          mediaUrl: mediaUrl || undefined,
+          scheduledAt,
+          reviewerId: reviewer?.id,
+        })
+      } catch (error) {
+        failed.push(`${label}: ${errorMessage(error)}`)
+        continue
       }
-      onCreated?.()
-      onClose()
-    } catch (e) {
-      toast.error(errorMessage(e))
-      setBusy(false)
+      created += 1
+      replacePost(draft)
+      if (!publishNow) continue
+      try {
+        const result = await socialApi.publish(draft.id)
+        replacePost(result)
+        if (result.status === 'PUBLISHED') published.push(label)
+        else failed.push(`${label}: ${result.error || 'could not be published'}`)
+      } catch (error) {
+        failed.push(`${label}: ${errorMessage(error)}`)
+      }
     }
+    if (publishNow && published.length) toast.success(`Published to ${published.join(', ')}.`)
+    if (failed.length) toast.error(`${failed.join(' ')} You can retry from Publishing.`)
+    else if (!publishNow) toast.success(reviewer ? 'Post saved as a draft. Submit it for approval when you are ready.' : 'Post saved as a draft.')
+    if (!created) {
+      setBusy(false)
+      return
+    }
+    onCreated?.()
+    onClose()
   }
 
   if (loaded && accounts.length === 0) {
@@ -157,14 +173,14 @@ export function PostComposer({ projectId, mediaUrl: initialMedia, caption: initi
           <Button variant="ghost" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button loading={busy} disabled={!accountId || uploading || overLimit} onClick={() => void create()}>
+          <Button loading={busy} disabled={!selectedAccounts.length || uploading || overLimit} onClick={() => void create()}>
             Save draft
           </Button>
           <Button
             variant="primary"
             icon="send"
             loading={busy}
-            disabled={!accountId || uploading || !!reviewer || overLimit}
+            disabled={!selectedAccounts.length || uploading || !!reviewer || overLimit}
             title={reviewer ? 'Posts requiring review cannot be published immediately.' : undefined}
             onClick={() => void create(true)}
           >
@@ -173,13 +189,27 @@ export function PostComposer({ projectId, mediaUrl: initialMedia, caption: initi
         </>
       }
     >
-      <SelectField label="Publish to" value={accountId} onChange={(e) => setAccountId(e.target.value)}>
-        {accounts.map((a) => (
-          <option key={a.id} value={a.id}>
-            {PLATFORM_LABEL[a.platform] ?? a.platform} · {a.displayName}
-          </option>
-        ))}
-      </SelectField>
+      <div className="field">
+        <span className="field__label">Publish to</span>
+        <div style={{ display: 'grid', gap: 8 }}>
+          {accounts.map((a) => (
+            <label
+              key={a.id}
+              style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '10px 12px', border: '1px solid var(--line)', borderRadius: 12, cursor: 'pointer' }}
+            >
+              <input
+                type="checkbox"
+                checked={accountIds.includes(String(a.id))}
+                onChange={() => toggleAccount(String(a.id))}
+                disabled={busy}
+              />
+              <span>{PLATFORM_LABEL[a.platform] ?? a.platform} · {a.displayName}</span>
+              {a.loginName && <span className="field__hint">via {a.loginName}</span>}
+            </label>
+          ))}
+        </div>
+        {selectedAccounts.length > 1 && <span className="field__hint">Each selected account gets its own post.</span>}
+      </div>
       <TextAreaField
         label="Caption"
         value={caption}
@@ -188,7 +218,7 @@ export function PostComposer({ projectId, mediaUrl: initialMedia, caption: initi
         hint={limit ? `${caption.length} of ${limit} characters` : `${caption.length} characters`}
         error={limit !== undefined && caption.length > limit ? `This is ${caption.length - limit} characters over the limit` : undefined}
       />
-      <p className="field__hint">Publish now sends this post directly to the selected social account. Save draft keeps it in Publishing without posting.</p>
+      <p className="field__hint">Publish now sends this post directly to each selected social account. Save draft keeps it in Publishing without posting.</p>
       <div className="field">
         <span className="field__label">Image</span>
         {mediaUrl ? (

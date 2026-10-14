@@ -10,7 +10,7 @@ import cors from 'cors'
 import multer from 'multer'
 import { OAuth2Client } from 'google-auth-library'
 import { WebSocketServer, type WebSocket } from 'ws'
-import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise'
+import type { PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise'
 import { authenticateUser, emailDomains, issueToken, registerUser, requireAuth, type AuthUser } from './auth.js'
 import { connectDatabase, db, one, rows, run, sqlValues } from './db.js'
 
@@ -41,6 +41,8 @@ interface FacebookPageAccount {
   externalId: string
   displayName: string
   token: string
+  loginId?: string
+  loginName?: string
 }
 
 interface SocialOAuthAccount {
@@ -50,6 +52,8 @@ interface SocialOAuthAccount {
   expiresIn: number | null
   refreshToken: string | null
   pages?: FacebookPageAccount[]
+  loginId?: string
+  loginName?: string
 }
 
 app.disable('x-powered-by')
@@ -1656,6 +1660,9 @@ async function exchangeSocialCode(platform: string, code: string, verifier: stri
   let externalId = ''
   let displayName = ''
   if (platform === 'facebook') {
+    const login = await socialJson(`https://graph.facebook.com/v21.0/me?fields=id,name&access_token=${encodeURIComponent(accessToken)}`)
+    const loginId = login.id ? String(login.id) : undefined
+    const loginName = login.name ? String(login.name) : undefined
     const pageData = await socialJson(`https://graph.facebook.com/v21.0/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(accessToken)}`)
     const pages = ((pageData.data as Record<string, unknown>[] | undefined) ?? [])
       .filter((page) => page.id && page.access_token)
@@ -1663,6 +1670,8 @@ async function exchangeSocialCode(platform: string, code: string, verifier: stri
         externalId: String(page.id),
         displayName: String(page.name ?? 'Facebook Page'),
         token: String(page.access_token),
+        loginId,
+        loginName,
       }))
     if (!pages.length) throw new Error('No Facebook Pages were found on this account. Check that you manage a Page and granted pages_show_list access.')
     return { ...pages[0]!, expiresIn: null, refreshToken: null, ...(pages.length > 1 ? { pages } : {}) }
@@ -1696,6 +1705,28 @@ async function exchangeSocialCode(platform: string, code: string, verifier: stri
   }
 }
 
+async function saveFacebookPage(executor: Pick<PoolConnection, 'execute'>, userId: number, page: FacebookPageAccount) {
+  const [existing] = await executor.execute<RowDataPacket[]>(
+    `SELECT id FROM social_accounts WHERE user_id = ? AND platform = 'facebook' AND external_id = ? LIMIT 1 FOR UPDATE`,
+    [userId, page.externalId],
+  )
+  const details = [page.displayName, encryptSecret(page.token), page.loginId ?? null, page.loginName ?? null]
+  if (existing[0]) {
+    await executor.execute(
+      `UPDATE social_accounts SET display_name = ?, encrypted_access_token = ?, encrypted_refresh_token = NULL,
+         token_expires_at = NULL, facebook_login_id = ?, facebook_login_name = ? WHERE id = ?`,
+      sqlValues([...details, existing[0].id]),
+    )
+    return Number(existing[0].id)
+  }
+  const [result] = await executor.execute<ResultSetHeader>(
+    `INSERT INTO social_accounts (created_at, user_id, platform, external_id, display_name, encrypted_access_token, encrypted_refresh_token, token_expires_at, facebook_login_id, facebook_login_name)
+     VALUES (CURRENT_TIMESTAMP, ?, 'facebook', ?, ?, ?, NULL, NULL, ?, ?)`,
+    sqlValues([userId, page.externalId, ...details]),
+  )
+  return Number(result.insertId)
+}
+
 app.get('/api/social/callback/:platform', async (req, res) => {
   const platform = String(req.params.platform)
   const base = new URL('/social', frontendUrl)
@@ -1725,13 +1756,17 @@ app.get('/api/social/callback/:platform', async (req, res) => {
       res.redirect(base.toString())
       return
     }
-    const expiresAt = account.expiresIn ? new Date(Date.now() + account.expiresIn * 1000) : null
-    await run(
-      `INSERT INTO social_accounts (user_id, platform, external_id, display_name, encrypted_access_token, encrypted_refresh_token, token_expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [state.userId, platform, account.externalId, account.displayName, encryptSecret(account.token),
-        account.refreshToken ? encryptSecret(account.refreshToken) : null, expiresAt],
-    )
+    if (platform === 'facebook') {
+      await saveFacebookPage(db(), Number(state.userId), account as FacebookPageAccount)
+    } else {
+      const expiresAt = account.expiresIn ? new Date(Date.now() + account.expiresIn * 1000) : null
+      await run(
+        `INSERT INTO social_accounts (created_at, user_id, platform, external_id, display_name, encrypted_access_token, encrypted_refresh_token, token_expires_at)
+         VALUES (CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?)`,
+        [state.userId, platform, account.externalId, account.displayName, encryptSecret(account.token),
+          account.refreshToken ? encryptSecret(account.refreshToken) : null, expiresAt],
+      )
+    }
     base.searchParams.set('connected', platform)
   } catch (error) {
     base.searchParams.set('error', (error as Error).message.slice(0, 160))
@@ -1747,7 +1782,8 @@ app.get('/api/social/platforms', (_req, res) => {
 
 app.get('/api/social/accounts', async (req, res) => {
   const found = await rows<AnyRow>(
-    `SELECT id, platform, display_name AS displayName, created_at AS connectedAt, token_expires_at AS tokenExpiresAt
+    `SELECT id, platform, display_name AS displayName, created_at AS connectedAt, token_expires_at AS tokenExpiresAt,
+      facebook_login_name AS loginName
      FROM social_accounts WHERE user_id = ? ORDER BY created_at DESC`,
     [userOf(req).id],
   )
@@ -1755,6 +1791,7 @@ app.get('/api/social/accounts', async (req, res) => {
     id: Number(account.id), platform: String(account.platform), displayName: String(account.displayName ?? ''),
     connectedAt: new Date(String(account.connectedAt)).toISOString(),
     expired: account.tokenExpiresAt != null && new Date(String(account.tokenExpiresAt)).getTime() < Date.now(),
+    loginName: account.loginName ? String(account.loginName) : null,
   })))
 })
 
@@ -1785,14 +1822,17 @@ app.get('/api/social/accounts/pending/:ticket', async (req, res) => {
   if (!pending) throw Object.assign(new Error('The Facebook Page selection expired. Connect Facebook again.'), { status: 410 })
   const pages = JSON.parse(decryptSecret(String(pending.pageData))) as FacebookPageAccount[]
   res.setHeader('Cache-Control', 'no-store')
-  res.json(pages.map(({ externalId, displayName }) => ({ id: externalId, name: displayName })))
+  res.json(pages.map(({ externalId, displayName, loginName }) => ({ id: externalId, name: displayName, loginName: loginName ?? null })))
 })
 
 app.post('/api/social/accounts/pending/:ticket/select', async (req, res) => {
   const ticket = String(req.params.ticket)
   if (!/^[A-Za-z0-9_-]{40,80}$/.test(ticket)) throw Object.assign(new Error('Invalid Facebook Page selection.'), { status: 400 })
-  const pageId = String(objectBody(req).pageId ?? '')
-  if (!pageId || pageId.length > 200) throw Object.assign(new Error('Choose a Facebook Page.'), { status: 400 })
+  const body = objectBody(req)
+  // pageIds selects several Pages in one request; pageId is the original single-Page form and is still accepted.
+  const requested = Array.isArray(body.pageIds) ? body.pageIds.map(String) : [String(body.pageId ?? '')]
+  const pageIds = [...new Set(requested.filter(Boolean))]
+  if (!pageIds.length || pageIds.some((pageId) => pageId.length > 200)) throw Object.assign(new Error('Choose a Facebook Page.'), { status: 400 })
   const caller = userOf(req)
   const connection = await db().getConnection()
   try {
@@ -1806,22 +1846,25 @@ app.post('/api/social/accounts/pending/:ticket/select', async (req, res) => {
     const pending = found[0] as AnyRow | undefined
     if (!pending) throw Object.assign(new Error('The Facebook Page selection expired. Connect Facebook again.'), { status: 410 })
     const pages = JSON.parse(decryptSecret(String(pending.pageData))) as FacebookPageAccount[]
-    const page = pages.find((candidate) => candidate.externalId === pageId)
-    if (!page) throw Object.assign(new Error('That Facebook Page was not part of this connection. Try connecting again.'), { status: 400 })
-    const [result] = await connection.execute<ResultSetHeader>(
-      `INSERT INTO social_accounts (user_id, platform, external_id, display_name, encrypted_access_token, encrypted_refresh_token, token_expires_at)
-       VALUES (?, 'facebook', ?, ?, ?, NULL, NULL)`,
-      sqlValues([caller.id, page.externalId, page.displayName, encryptSecret(page.token)]),
-    )
+    const selected = pageIds.map((pageId) => {
+      const page = pages.find((candidate) => candidate.externalId === pageId)
+      if (!page) throw Object.assign(new Error('That Facebook Page was not part of this connection. Try connecting again.'), { status: 400 })
+      return page
+    })
+    const ids: number[] = []
+    for (const page of selected) ids.push(await saveFacebookPage(connection, caller.id, page))
     await connection.execute('DELETE FROM oauth_pending_accounts WHERE ticket = ?', [ticket])
     await connection.commit()
-    res.status(201).json({
-      id: Number(result.insertId),
+    const accounts = selected.map((page, index) => ({
+      id: ids[index],
       platform: 'facebook',
       displayName: page.displayName,
       connectedAt: new Date().toISOString(),
       expired: false,
-    })
+      loginName: page.loginName ?? null,
+    }))
+    if (Array.isArray(body.pageIds)) res.status(201).json(accounts)
+    else res.status(201).json(accounts[0])
   } catch (error) {
     await connection.rollback()
     throw error
@@ -1890,11 +1933,11 @@ app.post('/api/social/posts', async (req, res) => {
   const reviewerId = body.reviewerId == null ? null : Number(body.reviewerId)
   if (reviewerId === caller.id) throw Object.assign(new Error('Choose someone else to review this post.'), { status: 400 })
   const id = insertId(await run(
-    `INSERT INTO social_posts (author_id, account_id, project_id, reviewer_id, caption, media_url, scheduled_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO social_posts (created_at, author_id, account_id, project_id, reviewer_id, caption, media_url, scheduled_at, status)
+     VALUES (CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, 'DRAFT')`,
     [caller.id, accountId, projectId, reviewerId, body.caption ?? null, body.mediaUrl ?? null, body.scheduledAt ?? null],
   ))
-  if (projectId) await run('INSERT INTO activities (actor_id, project_id, type, meta) VALUES (?, ?, ?, ?)', [caller.id, projectId, 'social.post.created', null])
+  if (projectId) await run('INSERT INTO activities (created_at, actor_id, project_id, type, meta) VALUES (CURRENT_TIMESTAMP, ?, ?, ?, ?)', [caller.id, projectId, 'social.post.created', null])
   res.status(201).json(await socialPostDto(id))
 })
 
@@ -2906,7 +2949,7 @@ function publishUser(userId: number, destination: string, body: unknown) {
 
 async function createNotification(userId: number, type: string, message: string, link: string | null) {
   const result = await run(
-    'INSERT INTO notifications (user_id, type, message, link) VALUES (?, ?, ?, ?)',
+    'INSERT INTO notifications (created_at, user_id, type, message, link) VALUES (CURRENT_TIMESTAMP, ?, ?, ?, ?)',
     [userId, type, message, link],
   )
   const item = {
