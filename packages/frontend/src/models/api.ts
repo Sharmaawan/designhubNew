@@ -178,6 +178,8 @@ export interface SocialAccount {
   displayName: string
   connectedAt: string
   expired: boolean
+  /** The Facebook login that granted access to this Page; null for other platforms. */
+  loginName?: string | null
 }
 
 export type PostStatus =
