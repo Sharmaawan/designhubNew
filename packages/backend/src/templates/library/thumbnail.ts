@@ -81,8 +81,9 @@ export function templateThumbnail(template: ThumbnailTemplate): string {
 
 /** Uses a pre-rendered JPEG preview when the template names one, otherwise falls back to the SVG preview. */
 export function thumbnailFor(template: LibraryTemplate): string {
-  if (!template.thumbnailFile) return templateThumbnail(template)
-  const file = new URL(`./assets/${template.thumbnailFile}`, import.meta.url)
+  // Named preview wins; otherwise the preview is expected at assets/<title-slug>.jpg.
+  const name = template.thumbnailFile ?? `${template.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}.jpg`
+  const file = new URL(`./assets/${name}`, import.meta.url)
   try {
     return `data:image/jpeg;base64,${readFileSync(file).toString('base64')}`
   } catch {

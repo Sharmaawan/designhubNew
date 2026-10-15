@@ -3,7 +3,7 @@ export type ShapeName = 'rect' | 'ellipse' | 'triangle' | 'diamond' | 'star' | '
 export type FrameName = 'rect' | 'ellipse' | 'rounded' | 'star' | 'heart'
 
 export interface LibraryElement {
-  type: 'text' | 'shape' | 'frame' | 'image'
+  type: 'text' | 'shape' | 'frame' | 'image' | 'icon'
   data: Record<string, unknown>
 }
 
@@ -68,4 +68,9 @@ export interface ImageCrop {
 /** A licensed photo. Crop is in source-image pixels, as the editor expects. */
 export function image(x: number, y: number, width: number, height: number, src: string, naturalWidth: number, naturalHeight: number, crop?: ImageCrop): LibraryElement {
   return { type: 'image', data: { x, y, width, height, src, naturalWidth, naturalHeight, ...(crop ? { crop } : {}), alt: '' } }
+}
+
+/** A line icon (SVG). The editor colours it with `fill`. */
+export function icon(x: number, y: number, size: number, name: string, svg: string, fill: string): LibraryElement {
+  return { type: 'icon', data: { x, y, width: size, height: size, name, svg, fill } }
 }
