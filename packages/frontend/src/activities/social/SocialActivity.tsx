@@ -13,11 +13,13 @@ import { Modal } from '@/components/ui/Modal'
 import { PostComposer } from '@/components/social/PostComposer'
 import { PostRow } from '@/components/social/PostRow'
 import { PLATFORM_LABEL } from '@/components/social/platforms'
+import { PLATFORM_LOGOS } from '@/components/social/platformLogos'
 import { timeAgo } from '@/utils/common'
 import './social.css'
 
 type Tab = 'posts' | 'approvals' | 'accounts'
 
+// LinkedIn's logo is not in the shared logo set, so its card keeps the text mark until LinkedIn's own file is added.
 const PLATFORM_MARK: Record<string, { mark: string; className: string }> = {
   facebook: { mark: 'f', className: 'facebook' },
   instagram: { mark: '◎', className: 'instagram' },
@@ -249,7 +251,13 @@ export default function SocialActivity() {
                 <section key={p.platform} className={`card platform-card${mine.length ? ' platform-card--connected' : ''}${!p.configured ? ' platform-card--unconfigured' : ''}`}>
                   <div className="platform-card__head">
                     <div className="platform-card__identity">
-                      <span className={`platform-mark platform-mark--${platform.className}`} aria-hidden="true">{platform.mark}</span>
+                      <span className={`platform-mark platform-mark--${platform.className}`} aria-hidden="true">
+                        {PLATFORM_LOGOS[p.platform] ? (
+                          <svg viewBox="0 0 24 24" width="22" height="22" role="img" aria-label={PLATFORM_LOGOS[p.platform]!.title}>
+                            <path d={PLATFORM_LOGOS[p.platform]!.path} fill={p.platform === 'x' ? '#FFFFFF' : PLATFORM_LOGOS[p.platform]!.hex} />
+                          </svg>
+                        ) : platform.mark}
+                      </span>
                       <div>
                         <h3>{PLATFORM_LABEL[p.platform] ?? p.platform}</h3>
                         <span className={`platform-card__status${mine.length ? ' is-connected' : ''}`}>
