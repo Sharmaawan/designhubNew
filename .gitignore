@@ -5,3 +5,4 @@ data/
 .env
 __pycache__/
 packages/backend/config/
+.playwright-mcp/

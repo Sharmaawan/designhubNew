@@ -13,6 +13,7 @@ export function TextEditOverlay() {
   const panY = useEditorUiStore((s) => s.panY)
   const setEditingText = useEditorUiStore((s) => s.setEditingText)
   const el = useEditorStore((s) => (id ? s.elements[id] : undefined))
+  const pageWidth = useEditorStore((s) => s.width)
   const ref = useRef<HTMLTextAreaElement>(null)
   const dragRef = useRef<{ pointerId: number; clientX: number; clientY: number } | null>(null)
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
@@ -100,16 +101,19 @@ export function TextEditOverlay() {
   function resizeText(event: PointerEvent<HTMLButtonElement>) {
     const drag = resizeRef.current
     if (!drag || drag.pointerId !== event.pointerId) return
-    setWidthOffset((event.clientX - drag.clientX) / zoom)
+    const dw = (event.clientX - drag.clientX) / zoom
+    const maxWidth = Math.max(40, d.width, pageWidth - d.x)
+    setWidthOffset(Math.min(dw, maxWidth - d.width))
   }
 
   function finishResize(event: PointerEvent<HTMLButtonElement>) {
     const drag = resizeRef.current
     if (!drag || drag.pointerId !== event.pointerId) return
     const dw = (event.clientX - drag.clientX) / zoom
+    const maxWidth = Math.max(40, d.width, pageWidth - d.x)
     resizeRef.current = null
     if (Math.abs(dw) > 0.5) {
-      updateElements([elementId], { width: Math.max(40, d.width + dw) })
+      updateElements([elementId], { width: Math.min(maxWidth, Math.max(40, d.width + dw)) })
     }
     setWidthOffset(0)
     ref.current?.focus()
