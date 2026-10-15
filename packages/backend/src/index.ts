@@ -1598,8 +1598,8 @@ function socialAuthorizeUrl(platform: string, state: string, verifier: string) {
   const redirectUri = socialRedirect(platform)
   const encode = encodeURIComponent
   const entries: Record<string, string> = {
-    facebook: `https://www.facebook.com/v21.0/dialog/oauth?client_id=${encode(clientId)}&redirect_uri=${encode(redirectUri)}&state=${state}&scope=pages_show_list,pages_manage_posts,pages_read_engagement`,
-    instagram: `https://www.facebook.com/v21.0/dialog/oauth?client_id=${encode(clientId)}&redirect_uri=${encode(redirectUri)}&state=${state}&scope=instagram_basic,instagram_content_publish,pages_show_list`,
+    facebook: `https://www.facebook.com/v21.0/dialog/oauth?client_id=${encode(clientId)}&redirect_uri=${encode(redirectUri)}&state=${state}&auth_type=reauthenticate&scope=pages_show_list,pages_manage_posts,pages_read_engagement`,
+    instagram: `https://www.facebook.com/v21.0/dialog/oauth?client_id=${encode(clientId)}&redirect_uri=${encode(redirectUri)}&state=${state}&auth_type=reauthenticate&scope=instagram_basic,instagram_content_publish,pages_show_list`,
     linkedin: `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${encode(clientId)}&redirect_uri=${encode(redirectUri)}&state=${state}&scope=${encode('openid profile w_member_social')}`,
     x: `https://twitter.com/i/oauth2/authorize?response_type=code&client_id=${encode(clientId)}&redirect_uri=${encode(redirectUri)}&state=${state}&scope=${encode('tweet.read tweet.write users.read offline.access')}&code_challenge=${encode(verifier)}&code_challenge_method=plain`,
     pinterest: `https://www.pinterest.com/oauth/?response_type=code&client_id=${encode(clientId)}&redirect_uri=${encode(redirectUri)}&state=${state}&scope=${encode('boards:read,pins:read,pins:write,user_accounts:read')}`,

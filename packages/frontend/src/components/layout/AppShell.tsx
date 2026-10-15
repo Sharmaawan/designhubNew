@@ -27,12 +27,11 @@ const MAIN: Item[] = [
 ]
 
 const MORE: Item[] = [
-  { to: '/profile#ai', label: 'AI tools', icon: 'sparkle' },
   { to: '/?view=trash', label: 'Trash', icon: 'trash', search: '?view=trash' },
   { to: '/profile', label: 'Settings', icon: 'settings' },
 ]
 
-function SideLink({ item, ai }: { item: Item; ai?: boolean }) {
+function SideLink({ item }: { item: Item }) {
   const loc = useLocation()
   const [pathAndSearch, hash] = item.to.split('#')
   const [path] = pathAndSearch!.split('?')
@@ -41,7 +40,7 @@ function SideLink({ item, ai }: { item: Item; ai?: boolean }) {
   return (
     <Link to={item.to} className={`nav-link ${current ? 'is-active' : ''}`} aria-current={current ? 'page' : undefined} title={item.label}>
       <Icon name={item.icon} size={18} />
-      <span style={ai ? { color: current ? undefined : 'var(--ai)' } : undefined}>{item.label}</span>
+      <span>{item.label}</span>
     </Link>
   )
 }
@@ -77,7 +76,7 @@ export function AppShell() {
         ))}
         <div className="nav-group">More</div>
         {MORE.map((l) => (
-          <SideLink key={l.label} item={l} ai={l.label === 'AI tools'} />
+          <SideLink key={l.label} item={l} />
         ))}
         <div className="side__spacer" />
       </nav>

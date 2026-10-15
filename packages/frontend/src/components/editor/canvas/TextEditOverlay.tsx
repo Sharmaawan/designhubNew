@@ -16,6 +16,8 @@ export function TextEditOverlay() {
   const ref = useRef<HTMLTextAreaElement>(null)
   const dragRef = useRef<{ pointerId: number; clientX: number; clientY: number } | null>(null)
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
+  const resizeRef = useRef<{ pointerId: number; clientX: number } | null>(null)
+  const [widthOffset, setWidthOffset] = useState(0)
 
   useEffect(() => {
     const ta = ref.current
@@ -36,10 +38,11 @@ export function TextEditOverlay() {
   const d = el.data as TextData
   const left = panX + (d.x + dragOffset.x) * zoom
   const top = panY + (d.y + dragOffset.y) * zoom
+  const width = Math.max(40, d.width + widthOffset)
   const style: React.CSSProperties = {
     left,
     top,
-    width: d.width * zoom,
+    width: width * zoom,
     minHeight: d.fontSize * d.lineHeight * zoom,
     transform: `rotate(${d.rotation}deg)`,
     transformOrigin: `${(d.width * zoom) / 2}px ${(d.height * zoom) / 2}px`,
@@ -78,13 +81,44 @@ export function TextEditOverlay() {
       updateElements([elementId], { x: d.x + dx, y: d.y + dy })
     }
     setDragOffset({ x: 0, y: 0 })
-    setEditingText(null)
+    ref.current?.focus()
   }
 
   function cancelMove(event: PointerEvent<HTMLButtonElement>) {
     if (dragRef.current?.pointerId !== event.pointerId) return
     dragRef.current = null
     setDragOffset({ x: 0, y: 0 })
+  }
+
+  function startResize(event: PointerEvent<HTMLButtonElement>) {
+    event.preventDefault()
+    event.stopPropagation()
+    resizeRef.current = { pointerId: event.pointerId, clientX: event.clientX }
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  function resizeText(event: PointerEvent<HTMLButtonElement>) {
+    const drag = resizeRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    setWidthOffset((event.clientX - drag.clientX) / zoom)
+  }
+
+  function finishResize(event: PointerEvent<HTMLButtonElement>) {
+    const drag = resizeRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    const dw = (event.clientX - drag.clientX) / zoom
+    resizeRef.current = null
+    if (Math.abs(dw) > 0.5) {
+      updateElements([elementId], { width: Math.max(40, d.width + dw) })
+    }
+    setWidthOffset(0)
+    ref.current?.focus()
+  }
+
+  function cancelResize(event: PointerEvent<HTMLButtonElement>) {
+    if (resizeRef.current?.pointerId !== event.pointerId) return
+    resizeRef.current = null
+    setWidthOffset(0)
   }
 
   return (
@@ -113,6 +147,17 @@ export function TextEditOverlay() {
       >
         Done · Esc
       </button>
+      <button
+        type="button"
+        className="text-edit-resize"
+        style={{ left: left + width * zoom - 6, top: top + (d.fontSize * d.lineHeight * zoom) / 2 - 6 }}
+        onPointerDown={startResize}
+        onPointerMove={resizeText}
+        onPointerUp={finishResize}
+        onPointerCancel={cancelResize}
+        aria-label="Drag to resize this text box"
+        title="Drag to resize"
+      />
       <textarea
         ref={ref}
         className="text-edit"
