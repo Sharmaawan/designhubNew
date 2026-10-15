@@ -2237,11 +2237,83 @@ app.get('/api/categories', async (_req, res) => {
   res.json(found.map((row) => ({ id: Number(row.id), name: String(row.name), slug: String(row.slug), width: Number(row.width), height: Number(row.height) })))
 })
 
+/** Pixabay search mapped to the response shape the editor's stock panel already reads. The key stays on the server. */
+async function pixabaySearch(key: string, query: string, page: number, category: string) {
+  const params = new URLSearchParams({
+    key,
+    q: query,
+    page: String(page),
+    per_page: '24',
+    safesearch: 'true',
+    image_type: category === 'illustration' || category === 'vector' ? category : 'photo',
+    min_width: '1000',
+    order: 'popular',
+  })
+  let response: globalThis.Response
+  try {
+    response = await fetch(`https://pixabay.com/api/?${params}`, { signal: AbortSignal.timeout(15_000) })
+  } catch {
+    throw Object.assign(new Error('The stock photo service could not be reached. Please try again.'), { status: 502 })
+  }
+  if (!response.ok) {
+    throw Object.assign(new Error(`The stock photo service returned an error (${response.status}).`), { status: response.status === 429 ? 503 : 502 })
+  }
+  const data = await response.json() as { totalHits?: number; hits?: Record<string, unknown>[] }
+  return {
+    page_count: Math.ceil(Math.min(Number(data.totalHits ?? 0), 500) / 24),
+    results: (data.hits ?? []).map((hit) => ({
+      id: String(hit.id),
+      title: String(hit.tags ?? 'Photo').split(',')[0]?.trim() || 'Photo',
+      url: String(hit.largeImageURL),
+      thumbnail: String(hit.webformatURL),
+      width: Number(hit.imageWidth),
+      height: Number(hit.imageHeight),
+      creator: String(hit.user ?? ''),
+      foreign_landing_url: String(hit.pageURL ?? ''),
+    })),
+  }
+}
+
+/** Giphy GIF search mapped to the stock panel's response shape. The key stays on the server. */
+async function giphySearch(key: string, query: string, page: number) {
+  const params = new URLSearchParams({
+    api_key: key,
+    q: query,
+    limit: '24',
+    offset: String((page - 1) * 24),
+    rating: 'g',
+    lang: 'en',
+  })
+  let response: globalThis.Response
+  try {
+    response = await fetch(`https://api.giphy.com/v1/gifs/search?${params}`, { signal: AbortSignal.timeout(15_000) })
+  } catch {
+    throw Object.assign(new Error('The GIF service could not be reached. Please try again.'), { status: 502 })
+  }
+  if (!response.ok) {
+    throw Object.assign(new Error(`The GIF service returned an error (${response.status}).`), { status: response.status === 429 ? 503 : 502 })
+  }
+  const data = await response.json() as { data?: Record<string, any>[]; pagination?: { total_count?: number } }
+  return {
+    page_count: Math.ceil(Math.min(Number(data.pagination?.total_count ?? 0), 4000) / 24),
+    results: (data.data ?? []).map((gif) => ({
+      id: String(gif.id),
+      title: String(gif.title || 'GIF'),
+      url: String(gif.images?.original?.url ?? ''),
+      thumbnail: String(gif.images?.fixed_width?.url ?? gif.images?.original?.url ?? ''),
+      width: Number(gif.images?.original?.width ?? 480),
+      height: Number(gif.images?.original?.height ?? 270),
+      creator: String(gif.username ?? ''),
+      foreign_landing_url: String(gif.url ?? ''),
+    })),
+  }
+}
+
 app.get('/api/stock/images', async (req, res) => {
   const query = String(req.query.q ?? '').trim().slice(0, 160) || 'nature'
   const page = Math.min(1000, Math.max(1, Number(req.query.page ?? 1) || 1))
   const category = String(req.query.category ?? 'photograph')
-  if (!['photograph', 'illustration'].includes(category)) {
+  if (!['photograph', 'illustration', 'vector'].includes(category)) {
     throw Object.assign(new Error('Unsupported stock image category.'), { status: 400 })
   }
   const params = new URLSearchParams({
@@ -2254,6 +2326,14 @@ app.get('/api/stock/images', async (req, res) => {
     format: 'json',
   })
   const extension = String(req.query.extension ?? '')
+  if (extension === 'gif' && process.env.GIPHY_API_KEY) {
+    res.json(await giphySearch(process.env.GIPHY_API_KEY, query, page))
+    return
+  }
+  if (process.env.PIXABAY_API_KEY && extension !== 'gif') {
+    res.json(await pixabaySearch(process.env.PIXABAY_API_KEY, query, page, category))
+    return
+  }
   if (extension === 'gif') params.set('extension', extension)
   let response: globalThis.Response
   try {

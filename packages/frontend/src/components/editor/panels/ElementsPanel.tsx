@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { ChartKind, FrameData, ShapeKind } from '@/models/design'
 import { dragProps } from '@/editor/actions/dropActions'
 import { insertAsset, type AssetPayload } from '@/editor/actions/assetActions'
-import { LINE_ICONS } from '@/services/assets/graphics'
+import { LINE_ICONS, type Graphic } from '@/services/assets/graphics'
 import { Icon } from '@/components/ui/Icon'
 import { PanelShell } from './PanelShell'
+import { LibraryGraphics } from './LibraryGraphics'
 import { insertQrCode } from '@/editor/actions/creativeTools'
 import { useEditorUiStore } from '@/stores/editorUiStore'
 import { Button } from '@/components/ui/Button'
@@ -55,7 +56,18 @@ export function ElementsPanel() {
   const [qr, setQr] = useState('')
   const drawing = useEditorUiStore((s) => s.drawing)
   const brush = useEditorUiStore((s) => s.brush)
-  const icons = useMemo(() => LINE_ICONS.filter((g) => g.name.includes(q.toLowerCase())), [q])
+  const [lucide, setLucide] = useState<Graphic[]>([])
+  // The full Lucide set is large, so it loads only when someone searches.
+  useEffect(() => {
+    if (!q.trim() || lucide.length > 0) return
+    void import('@/services/assets/lucideIcons').then((m) =>
+      setLucide(m.LUCIDE_ICONS.map((i) => ({ id: `lucide-${i.name}`, name: i.name, svg: i.svg }))),
+    )
+  }, [q, lucide.length])
+  const icons = useMemo(
+    () => (q ? [...LINE_ICONS, ...lucide].filter((g) => g.name.includes(q.toLowerCase())).slice(0, 120) : LINE_ICONS),
+    [q, lucide],
+  )
   return (
     <PanelShell title="Elements" search={{ value: q, onChange: setQ, placeholder: 'Search graphics' }}>
       {!q && (
@@ -139,6 +151,11 @@ export function ElementsPanel() {
           </div>
         )}
       </section>
+      {q.trim() && (
+        <section className="drawer__section">
+          <LibraryGraphics query={q.trim()} />
+        </section>
+      )}
     </PanelShell>
   )
 }

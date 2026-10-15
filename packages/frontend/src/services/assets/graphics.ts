@@ -1,3 +1,4 @@
+import { EXTRA_ILLUSTRATIONS } from './graphicsExtra'
 import { ICONS, type IconName } from '@/components/ui/iconPaths'
 
 export interface Graphic {
@@ -27,7 +28,7 @@ export const LINE_ICONS: Graphic[] = GRAPHIC_ICONS.map((name) => ({ id: `icon-${
 const svg = (inner: string) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">${inner}</svg>`
 
 /** Hand-built vector art, so the library works with no external service. Colors are baked in. */
-export const ILLUSTRATIONS: Graphic[] = [
+const BASE_ILLUSTRATIONS: Graphic[] = [
   { id: 'sun-hills', name: 'Sun over hills', colored: true, svg: svg('<circle cx="100" cy="80" r="42" fill="#FFB020"/><path d="M0 200V140q50-50 100-10t100-20v90z" fill="#FF5A36"/><path d="M0 200v-30q60-40 110 0t90-10v40z" fill="#151515"/>') },
   { id: 'blob-orange', name: 'Orange blob', colored: true, svg: svg('<path d="M148 40c30 24 38 66 20 98s-62 52-98 38S14 126 28 86 118 16 148 40z" fill="#FFB547"/>') },
   { id: 'blob-blue', name: 'Blue blob', colored: true, svg: svg('<path d="M160 52c26 28 22 74-6 102s-76 36-104 8S22 82 54 54s80-30 106-2z" fill="#FF5A36"/>') },
@@ -42,3 +43,5 @@ export const ILLUSTRATIONS: Graphic[] = [
   { id: 'squiggle', name: 'Squiggle', colored: true, svg: svg('<path d="M10 100q20-50 40 0t40 0 40 0 40 0 20-10" fill="none" stroke="#FFB547" stroke-width="12" stroke-linecap="round"/>') },
   { id: 'checker', name: 'Checkerboard', colored: true, svg: svg(Array.from({ length: 16 }, (_, i) => ((i % 4) + Math.floor(i / 4)) % 2 === 0 ? `<rect x="${(i % 4) * 50}" y="${Math.floor(i / 4) * 50}" width="50" height="50" fill="#151515"/>` : '').join('')) },
 ]
+
+export const ILLUSTRATIONS: Graphic[] = [...BASE_ILLUSTRATIONS, ...EXTRA_ILLUSTRATIONS]

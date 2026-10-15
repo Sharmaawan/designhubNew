@@ -76,3 +76,9 @@ function openverse(id: string, label: string, extra: Record<string, string>): St
 export const PHOTO_PROVIDERS: StockProvider[] = [openverse('openverse-photos', 'Openverse photos', { category: 'photograph' })]
 export const GIF_PROVIDERS: StockProvider[] = [openverse('openverse-gifs', 'Openverse GIFs', { extension: 'gif' })]
 export const ILLUSTRATION_PROVIDERS: StockProvider[] = [openverse('openverse-art', 'Openverse illustrations', { category: 'illustration' })]
+
+/** Library graphics for the Elements panel: Pixabay illustrations and vectors, searched on demand. */
+export const GRAPHIC_PROVIDERS: StockProvider[] = [
+  openverse('library-illustrations', 'Illustrations', { category: 'illustration' }),
+  openverse('library-vectors', 'Vectors', { category: 'vector' }),
+]

@@ -2,6 +2,8 @@ import type { ExecuteValues } from 'mysql2'
 import mysql from 'mysql2/promise'
 import type { Pool, RowDataPacket } from 'mysql2/promise'
 import { randomBytes } from 'node:crypto'
+import { libraryTemplates } from './templates/library/index.js'
+import { thumbnailFor } from './templates/library/thumbnail.js'
 
 const database = process.env.DB_NAME ?? 'designhub'
 if (!/^[A-Za-z0-9_$-]+$/.test(database)) throw new Error('DB_NAME contains invalid characters.')
@@ -275,180 +277,16 @@ function escapeXml(value: string): string {
   return value.replace(/[<>&"']/g, (char) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' })[char]!)
 }
 
-function templateThumbnail(template: {
-  width: number
-  height: number
-  background: string
-  elements: { type: string; data: Record<string, unknown> }[]
-}): string {
-  const elements = template.elements.map(({ type, data }) => {
-    const x = Number(data.x ?? 0)
-    const y = Number(data.y ?? 0)
-    const width = Number(data.width ?? 0)
-    const height = Number(data.height ?? 0)
-    const fill = escapeXml(String(data.fill ?? '#151515'))
-    if (type === 'shape') {
-      if (data.shape === 'ellipse') {
-        return `<ellipse cx="${x + width / 2}" cy="${y + height / 2}" rx="${width / 2}" ry="${height / 2}" fill="${fill}"/>`
-      }
-      return `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="${Number(data.cornerRadius ?? 0)}" fill="${fill}"/>`
-    }
-    if (type === 'text') {
-      const fontSize = Number(data.fontSize ?? 32)
-      const lines = String(data.text ?? '').split('\n')
-      const spans = lines.map((line, index) => `<tspan x="${x}" dy="${index ? fontSize * 1.2 : 0}">${escapeXml(line)}</tspan>`).join('')
-      return `<text x="${x}" y="${y + fontSize}" fill="${fill}" font-family="Arial,sans-serif" font-size="${fontSize}" font-weight="${Number(data.fontWeight ?? 400)}">${spans}</text>`
-    }
-    return ''
-  }).join('')
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${template.width} ${template.height}"><rect width="100%" height="100%" fill="${escapeXml(template.background)}"/>${elements}</svg>`
-  return `data:image/svg+xml,${encodeURIComponent(svg)}`
-}
 
 async function seedTemplates() {
-  const templates: {
-    slug: string
-    title: string
-    tags: string
-    width: number
-    height: number
-    background: string
-    elements: { type: string; data: Record<string, unknown> }[]
-  }[] = [
-    {
-      slug: 'instagram-post', title: 'Launch day', tags: 'launch,product,announcement', width: 1080, height: 1080, background: '#151515',
-      elements: [
-        { type: 'shape', data: { x: 0, y: 0, width: 1080, height: 1080, shape: 'rect', fill: '#151515' } },
-        { type: 'shape', data: { x: 560, y: 70, width: 760, height: 760, shape: 'ellipse', fill: '#FF5A36' } },
-        { type: 'shape', data: { x: 10, y: 700, width: 520, height: 520, shape: 'ellipse', fill: '#FFB547' } },
-        { type: 'text', data: { x: 90, y: 330, width: 900, height: 180, text: 'We are live.', fontFamily: 'Bricolage Grotesque', fontSize: 150, fontWeight: 800, fill: '#F6F5F2', align: 'left' } },
-        { type: 'text', data: { x: 90, y: 560, width: 720, height: 58, text: 'Our new collection is out today. Come take a look.', fontFamily: 'Inter Tight', fontSize: 48, fontWeight: 400, fill: '#F6F5F2', align: 'left' } },
-      ],
-    },
-    {
-      slug: 'instagram-post', title: 'Quote of the week', tags: 'quote,minimal,text', width: 1080, height: 1080, background: '#F2EFE6',
-      elements: [
-        { type: 'shape', data: { x: 60, y: 60, width: 960, height: 960, shape: 'rect', fill: '#F2EFE6' } },
-        { type: 'shape', data: { x: 90, y: 90, width: 900, height: 900, shape: 'rect', fill: '#FFFFFF', cornerRadius: 28 } },
-        { type: 'text', data: { x: 150, y: 330, width: 780, height: 110, text: 'Good design is as little design as possible.', fontFamily: 'Fraunces', fontSize: 84, fontWeight: 600, fill: '#151515', align: 'left' } },
-        { type: 'text', data: { x: 150, y: 760, width: 600, height: 48, text: 'Dieter Rams', fontFamily: 'Inter Tight', fontSize: 40, fontWeight: 500, fill: '#FF5A36', align: 'left' } },
-      ],
-    },
-    {
-      slug: 'instagram-story', title: 'Sale ends tonight', tags: 'sale,promo,story', width: 1080, height: 1920, background: '#FF5A36',
-      elements: [
-        { type: 'shape', data: { x: 0, y: 0, width: 1080, height: 1920, shape: 'rect', fill: '#FF5A36' } },
-        { type: 'shape', data: { x: 140, y: 520, width: 800, height: 800, shape: 'ellipse', fill: '#FFB547' } },
-        { type: 'text', data: { x: 90, y: 200, width: 900, height: 72, text: '48 hours only', fontFamily: 'Inter Tight', fontSize: 60, fontWeight: 600, fill: '#FFFFFF', align: 'left' } },
-        { type: 'text', data: { x: 90, y: 760, width: 900, height: 190, text: 'Up to 50% off', fontFamily: 'Anton', fontSize: 160, fontWeight: 400, fill: '#FFFFFF', align: 'left' } },
-        { type: 'text', data: { x: 90, y: 1560, width: 900, height: 80, text: 'Shop the sale', fontFamily: 'Bricolage Grotesque', fontSize: 64, fontWeight: 700, fill: '#FFFFFF', align: 'left' } },
-      ],
-    },
-    {
-      slug: 'presentation', title: 'Quarterly review', tags: 'business,report,slides', width: 1920, height: 1080, background: '#F6F5F2',
-      elements: [
-        { type: 'shape', data: { x: 0, y: 0, width: 40, height: 1080, shape: 'rect', fill: '#FF5A36' } },
-        { type: 'text', data: { x: 180, y: 360, width: 1400, height: 180, text: 'Quarterly review', fontFamily: 'Bricolage Grotesque', fontSize: 150, fontWeight: 800, fill: '#151515', align: 'left' } },
-        { type: 'text', data: { x: 180, y: 560, width: 1200, height: 64, text: 'What shipped, what we learned, and what comes next', fontFamily: 'Inter Tight', fontSize: 56, fontWeight: 400, fill: '#4A4E57', align: 'left' } },
-      ],
-    },
-    {
-      slug: 'poster', title: 'Open studio night', tags: 'event,poster,art', width: 1587, height: 2245, background: '#FFB547',
-      elements: [
-        { type: 'shape', data: { x: 220, y: 420, width: 1150, height: 1150, shape: 'ellipse', fill: '#151515' } },
-        { type: 'text', data: { x: 140, y: 1560, width: 1300, height: 230, text: 'Open studio', fontFamily: 'Anton', fontSize: 190, fontWeight: 400, fill: '#151515', align: 'left' } },
-        { type: 'text', data: { x: 140, y: 1860, width: 1300, height: 80, text: 'Friday 7 pm · Free entry', fontFamily: 'Inter Tight', fontSize: 64, fontWeight: 600, fill: '#151515', align: 'left' } },
-      ],
-    },
-    {
-      slug: 'youtube-thumbnail', title: 'Big reveal', tags: 'video,thumbnail,bold', width: 1280, height: 720, background: '#FFB547',
-      elements: [
-        { type: 'shape', data: { x: 70, y: 70, width: 700, height: 580, shape: 'rect', fill: '#151515', cornerRadius: 24 } },
-        { type: 'text', data: { x: 110, y: 140, width: 620, height: 120, text: 'I rebuilt my desk setup', fontFamily: 'Anton', fontSize: 96, fontWeight: 400, fill: '#FFFFFF', align: 'left' } },
-        { type: 'text', data: { x: 110, y: 430, width: 620, height: 68, text: 'and it changed everything', fontFamily: 'Inter Tight', fontSize: 52, fontWeight: 600, fill: '#FFB547', align: 'left' } },
-      ],
-    },
-    {
-      slug: 'linkedin-banner', title: 'Hiring banner', tags: 'hiring,linkedin,business', width: 1584, height: 396, background: '#151515',
-      elements: [
-        { type: 'shape', data: { x: 1180, y: 0, width: 404, height: 396, shape: 'rect', fill: '#FF5A36' } },
-        { type: 'text', data: { x: 80, y: 110, width: 1000, height: 110, text: 'We are hiring designers', fontFamily: 'Bricolage Grotesque', fontSize: 90, fontWeight: 800, fill: '#F6F5F2', align: 'left' } },
-        { type: 'text', data: { x: 80, y: 240, width: 1000, height: 52, text: 'Join a small team building tools people love', fontFamily: 'Inter Tight', fontSize: 40, fontWeight: 400, fill: '#F6F5F2', align: 'left' } },
-      ],
-    },
-    {
-      slug: 'pinterest-pin', title: 'Weekly meal plan', tags: 'food,pin,lifestyle', width: 1000, height: 1500, background: '#F2EFE6',
-      elements: [
-        { type: 'shape', data: { x: 150, y: 120, width: 700, height: 700, shape: 'ellipse', fill: '#FFB547' } },
-        { type: 'text', data: { x: 80, y: 900, width: 840, height: 130, text: 'A week of easy dinners', fontFamily: 'Fraunces', fontSize: 110, fontWeight: 700, fill: '#151515', align: 'left' } },
-        { type: 'text', data: { x: 80, y: 1240, width: 840, height: 52, text: 'Plan once, cook calmly', fontFamily: 'Inter Tight', fontSize: 44, fontWeight: 500, fill: '#4A4E57', align: 'left' } },
-      ],
-    },
-    {
-      slug: 'a4-document', title: 'Modern resume', tags: 'resume,cv,career,professional', width: 1240, height: 1754, background: '#FFFFFF',
-      elements: [
-        { type: 'shape', data: { x: 0, y: 0, width: 360, height: 1754, shape: 'rect', fill: '#173B3F' } },
-        { type: 'text', data: { x: 48, y: 130, width: 270, height: 110, text: 'YOUR NAME', fontFamily: 'Bricolage Grotesque', fontSize: 58, fontWeight: 800, fill: '#FFFFFF' } },
-        { type: 'text', data: { x: 48, y: 290, width: 270, height: 56, text: 'CONTACT', fontFamily: 'Inter Tight', fontSize: 34, fontWeight: 700, fill: '#FFB547' } },
-        { type: 'text', data: { x: 48, y: 360, width: 270, height: 200, text: ['email@example.com', '+1 555 0100', 'City, Country'].join('\n'), fontFamily: 'Inter Tight', fontSize: 27, fontWeight: 400, fill: '#FFFFFF' } },
-        { type: 'text', data: { x: 420, y: 160, width: 740, height: 76, text: 'DESIGNER & CREATOR', fontFamily: 'Inter Tight', fontSize: 34, fontWeight: 700, fill: '#FF5A36' } },
-        { type: 'text', data: { x: 420, y: 290, width: 740, height: 80, text: 'Profile', fontFamily: 'Bricolage Grotesque', fontSize: 60, fontWeight: 800, fill: '#173B3F' } },
-        { type: 'text', data: { x: 420, y: 390, width: 740, height: 180, text: 'A short introduction about your experience, strengths and the work you love to do.', fontFamily: 'Inter Tight', fontSize: 30, fontWeight: 400, fill: '#424B50' } },
-        { type: 'text', data: { x: 420, y: 680, width: 740, height: 80, text: 'Experience', fontFamily: 'Bricolage Grotesque', fontSize: 60, fontWeight: 800, fill: '#173B3F' } },
-        { type: 'text', data: { x: 420, y: 790, width: 740, height: 200, text: ['ROLE · COMPANY', 'Add your achievements and impact here.', '', 'ROLE · COMPANY', 'Add another experience.'].join('\n'), fontFamily: 'Inter Tight', fontSize: 30, fontWeight: 500, fill: '#424B50' } },
-      ],
-    },
-    {
-      slug: 'a4-document', title: 'Clean business invoice', tags: 'invoice,business,finance,document', width: 1240, height: 1754, background: '#F6F5F2',
-      elements: [
-        { type: 'shape', data: { x: 70, y: 70, width: 1100, height: 260, shape: 'rect', fill: '#151515', cornerRadius: 28 } },
-        { type: 'text', data: { x: 120, y: 105, width: 500, height: 80, text: 'YOUR STUDIO', fontFamily: 'Bricolage Grotesque', fontSize: 62, fontWeight: 800, fill: '#FFFFFF' } },
-        { type: 'text', data: { x: 120, y: 205, width: 500, height: 44, text: 'INVOICE  #001  ·  DATE', fontFamily: 'Inter Tight', fontSize: 30, fontWeight: 500, fill: '#FFB547' } },
-        { type: 'text', data: { x: 100, y: 430, width: 1000, height: 70, text: 'BILL TO', fontFamily: 'Inter Tight', fontSize: 34, fontWeight: 700, fill: '#FF5A36' } },
-        { type: 'text', data: { x: 100, y: 495, width: 1000, height: 100, text: ['Client name', 'Company · Address · Email'].join('\n'), fontFamily: 'Inter Tight', fontSize: 32, fontWeight: 400, fill: '#151515' } },
-        { type: 'shape', data: { x: 100, y: 680, width: 1040, height: 5, shape: 'rect', fill: '#FF5A36' } },
-        { type: 'text', data: { x: 100, y: 730, width: 1040, height: 260, text: ['DESCRIPTION                         QTY       PRICE', 'Design services                         1       $0.00', 'Project expenses                       1       $0.00'].join('\n'), fontFamily: 'Inter Tight', fontSize: 30, fontWeight: 500, fill: '#151515' } },
-        { type: 'text', data: { x: 700, y: 1100, width: 440, height: 100, text: 'TOTAL     $0.00', fontFamily: 'Bricolage Grotesque', fontSize: 48, fontWeight: 800, fill: '#173B3F' } },
-        { type: 'text', data: { x: 100, y: 1480, width: 1000, height: 60, text: 'Thank you for your business.', fontFamily: 'Fraunces', fontSize: 38, fontWeight: 600, fill: '#424B50' } },
-      ],
-    },
-    {
-      slug: 'a4-document', title: 'Creative event flyer', tags: 'event,flyer,announcement,concert', width: 1240, height: 1754, background: '#F5EAD7',
-      elements: [
-        { type: 'shape', data: { x: 70, y: 70, width: 1100, height: 1614, shape: 'rect', fill: '#F5EAD7', cornerRadius: 40 } },
-        { type: 'shape', data: { x: 650, y: 220, width: 500, height: 500, shape: 'ellipse', fill: '#FF5A36' } },
-        { type: 'text', data: { x: 130, y: 150, width: 900, height: 68, text: 'YOU ARE INVITED', fontFamily: 'Inter Tight', fontSize: 42, fontWeight: 700, fill: '#173B3F' } },
-        { type: 'text', data: { x: 130, y: 420, width: 940, height: 320, text: ['GOOD', 'VIBRATIONS'].join('\n'), fontFamily: 'Bricolage Grotesque', fontSize: 140, fontWeight: 800, fill: '#151515' } },
-        { type: 'text', data: { x: 130, y: 920, width: 900, height: 160, text: ['MUSIC · ART · COMMUNITY', 'Saturday, 7 PM  |  Your City'].join('\n'), fontFamily: 'Inter Tight', fontSize: 42, fontWeight: 600, fill: '#173B3F' } },
-        { type: 'shape', data: { x: 130, y: 1210, width: 370, height: 100, shape: 'rect', fill: '#173B3F', cornerRadius: 50 } },
-        { type: 'text', data: { x: 180, y: 1230, width: 280, height: 52, text: 'GET TICKETS', fontFamily: 'Inter Tight', fontSize: 34, fontWeight: 700, fill: '#FFFFFF' } },
-        { type: 'text', data: { x: 130, y: 1480, width: 900, height: 50, text: 'DETAILS  ·  ADDRESS  ·  WEBSITE', fontFamily: 'Inter Tight', fontSize: 28, fontWeight: 500, fill: '#424B50' } },
-      ],
-    },
-    {
-      slug: 'a4-document', title: 'Study notes', tags: 'education,school,study,worksheet', width: 1240, height: 1754, background: '#FFFFFF',
-      elements: [
-        { type: 'shape', data: { x: 0, y: 0, width: 1240, height: 250, shape: 'rect', fill: '#355CDE' } },
-        { type: 'text', data: { x: 90, y: 75, width: 1050, height: 90, text: 'TODAY’S NOTES', fontFamily: 'Bricolage Grotesque', fontSize: 76, fontWeight: 800, fill: '#FFFFFF' } },
-        { type: 'text', data: { x: 90, y: 170, width: 1050, height: 50, text: 'SUBJECT  ___________________     DATE  _______________', fontFamily: 'Inter Tight', fontSize: 28, fontWeight: 500, fill: '#FFFFFF' } },
-        { type: 'text', data: { x: 100, y: 330, width: 1040, height: 80, text: 'KEY IDEA', fontFamily: 'Inter Tight', fontSize: 36, fontWeight: 700, fill: '#FF5A36' } },
-        { type: 'text', data: { x: 100, y: 410, width: 1040, height: 180, text: 'Write the main concept in one or two sentences.', fontFamily: 'Fraunces', fontSize: 46, fontWeight: 500, fill: '#151515' } },
-        { type: 'shape', data: { x: 100, y: 630, width: 1040, height: 4, shape: 'rect', fill: '#D8DDEB' } },
-        { type: 'text', data: { x: 100, y: 700, width: 1040, height: 70, text: 'IMPORTANT DETAILS', fontFamily: 'Inter Tight', fontSize: 36, fontWeight: 700, fill: '#355CDE' } },
-        { type: 'text', data: { x: 100, y: 790, width: 1040, height: 400, text: ['01  Add a definition or important fact.', '', '02  Summarize an example.', '', '03  Note a question to revisit.'].join('\n'), fontFamily: 'Inter Tight', fontSize: 34, fontWeight: 400, fill: '#424B50' } },
-        { type: 'text', data: { x: 100, y: 1320, width: 1040, height: 70, text: 'REMEMBER', fontFamily: 'Inter Tight', fontSize: 36, fontWeight: 700, fill: '#FF5A36' } },
-        { type: 'text', data: { x: 100, y: 1410, width: 1040, height: 140, text: 'A takeaway, formula or next step.', fontFamily: 'Fraunces', fontSize: 42, fontWeight: 500, fill: '#151515' } },
-      ],
-    },
-  ]
-  for (const template of templates) {
+  for (const template of libraryTemplates) {
     const category = await db().query('SELECT id FROM categories WHERE slug = ? LIMIT 1', [template.slug])
     const categoryRows = category[0] as RowDataPacket[]
     const categoryId = Number(categoryRows[0]?.id)
     if (!categoryId) continue
     const existing = await db().query('SELECT id, thumbnail FROM templates WHERE category_id = ? AND title = ? LIMIT 1', [categoryId, template.title])
     const existingRow = (existing[0] as RowDataPacket[])[0] as { id: number; thumbnail: string | null } | undefined
-    const thumbnail = templateThumbnail(template)
+    const thumbnail = thumbnailFor(template)
     if (existingRow) {
       if (!existingRow.thumbnail) await db().query('UPDATE templates SET thumbnail = ? WHERE id = ?', [thumbnail, existingRow.id])
       continue
