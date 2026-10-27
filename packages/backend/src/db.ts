@@ -227,6 +227,14 @@ async function createMissingTables() {
       ticket VARCHAR(80) NOT NULL PRIMARY KEY, user_id BIGINT NOT NULL, platform VARCHAR(24) NOT NULL,
       page_data LONGTEXT NOT NULL, expires_at TIMESTAMP NOT NULL, INDEX(user_id, expires_at)
     ) ENGINE=InnoDB`,
+    `CREATE TABLE IF NOT EXISTS video_projects (
+      id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      owner_id BIGINT NOT NULL, title VARCHAR(200) NOT NULL,
+      width INT NOT NULL DEFAULT 1080, height INT NOT NULL DEFAULT 1920, fps INT NOT NULL DEFAULT 30,
+      duration_seconds DOUBLE NOT NULL DEFAULT 0, timeline LONGTEXT NOT NULL,
+      deleted_at TIMESTAMP NULL, INDEX(owner_id, deleted_at)
+    ) ENGINE=InnoDB`,
   ]
 
   for (const statement of schema) await db().query(statement)
@@ -234,9 +242,12 @@ async function createMissingTables() {
     ['facebook_login_id', 'VARCHAR(120) NULL'],
     ['facebook_login_name', 'VARCHAR(160) NULL'],
   ])
+  await addMissingColumns('assets', [
+    ['duration_seconds', 'DOUBLE NULL'],
+  ])
   await db().query(
     `INSERT IGNORE INTO plans (code, name, price_cents, max_projects, storage_bytes, ai_requests_per_month, exports_per_month, team_seats)
-     VALUES ('free', 'Free', 0, 10, 1073741824, 20, 30, 1),
+     VALUES ('free', 'Free', 0, 10, 1073741824, 999999, 30, 10),
        ('pro', 'Pro', 1200, 500, 53687091200, 500, 1000, 5),
        ('team', 'Team', 2900, 5000, 536870912000, 5000, 10000, 50)`,
   )

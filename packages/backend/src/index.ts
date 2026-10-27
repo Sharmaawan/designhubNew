@@ -9,6 +9,8 @@ import express, { type NextFunction, type Request, type Response as ExpressRespo
 import cors from 'cors'
 import multer from 'multer'
 import { OAuth2Client } from 'google-auth-library'
+import nodemailer from 'nodemailer'
+import { cleanupExportJob, getExportJob, readExportOutput, startExportJob, type ExportInput } from './videoExport.js'
 import { WebSocketServer, type WebSocket } from 'ws'
 import type { PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise'
 import { authenticateUser, emailDomains, issueToken, registerUser, requireAuth, type AuthUser } from './auth.js'
@@ -115,46 +117,50 @@ function jsonValue(value: unknown, fallback: unknown = {}) {
   }
 
   function mailConfiguration() {
-    const apiKey = process.env.MAILGUN_API_KEY ?? ''
-    const domain = process.env.MAILGUN_DOMAIN ?? ''
-    const base = process.env.MAILGUN_BASE_URL ??
-      (process.env.MAILGUN_REGION?.toLowerCase() === 'eu' ? 'https://api.eu.mailgun.net' : 'https://api.mailgun.net')
-    return { apiKey, domain, base: base.replace(/\/+$/, ''), from: process.env.MAIL_FROM ?? `DesignHub <postmaster@${domain}>` }
+    const host = process.env.SMTP_HOST ?? ''
+    const port = Number(process.env.SMTP_PORT ?? 587)
+    const user = process.env.SMTP_USER ?? ''
+    const pass = process.env.SMTP_PASS ?? ''
+    const secure = process.env.SMTP_SECURE ? process.env.SMTP_SECURE === 'true' : port === 465
+    return { host, port, user, pass, secure, from: process.env.MAIL_FROM ?? `DesignHub <${user}>` }
+  }
+
+  let mailTransport: ReturnType<typeof nodemailer.createTransport> | null = null
+  let mailTransportKey = ''
+  function smtpTransport(config: ReturnType<typeof mailConfiguration>) {
+    const key = `${config.host}:${config.port}:${config.user}`
+    if (mailTransport && mailTransportKey === key) return mailTransport
+    mailTransport = nodemailer.createTransport({
+      host: config.host,
+      port: config.port,
+      secure: config.secure,
+      auth: { user: config.user, pass: config.pass },
+    })
+    mailTransportKey = key
+    return mailTransport
   }
 
   async function sendTransactionalEmail(to: string, name: string, subject: string, text: string, html: string) {
     const config = mailConfiguration()
-    if (!config.apiKey || !config.domain) return { email: to, name, sent: false, problem: 'Email is not set up on the server yet' }
-    const form = new URLSearchParams({
-      from: config.from,
-      to: name ? `${name} <${to}>` : to,
-      subject,
-      text,
-      html,
-    })
-    let response: globalThis.Response
+    if (!config.host || !config.user || !config.pass) return { email: to, name, sent: false, problem: 'Email is not set up on the server yet' }
     try {
-      response = await fetch(`${config.base}/v3/${encodeURIComponent(config.domain)}/messages`, {
-        method: 'POST',
-        headers: {
-          authorization: `Basic ${Buffer.from(`api:${config.apiKey}`).toString('base64')}`,
-          'content-type': 'application/x-www-form-urlencoded',
-        },
-        body: form.toString(),
-        signal: AbortSignal.timeout(15_000),
+      await smtpTransport(config).sendMail({
+        from: config.from,
+        to: name ? `${name} <${to}>` : to,
+        subject,
+        text,
+        html,
       })
-    } catch {
-      return { email: to, name, sent: false, problem: 'Mailgun could not be reached' }
+      return { email: to, name, sent: true }
+    } catch (error) {
+      const code = (error as { responseCode?: number; code?: string }).responseCode ?? (error as { code?: string }).code
+      const problem = code === 535 || code === 'EAUTH'
+        ? 'The mail server rejected the username or password'
+        : code === 'ECONNECTION' || code === 'ETIMEDOUT'
+          ? 'The mail server could not be reached'
+          : `The mail server returned an error (${code ?? (error as Error).message})`
+      return { email: to, name, sent: false, problem }
     }
-    if (response.ok) return { email: to, name, sent: true }
-    const problem = response.status === 401
-      ? 'Mailgun rejected the API key'
-      : response.status === 404
-        ? `Mailgun does not know the domain ${config.domain}. Check the region`
-        : response.status === 403
-          ? 'Mailgun refused this recipient. Check sandbox authorisation and domain settings'
-          : `Mailgun returned an error (${response.status})`
-    return { email: to, name, sent: false, problem }
   }
 
   async function approvalEmailsEnabled(userId: number) {
@@ -1504,7 +1510,7 @@ app.post('/api/approvals/project/:projectId/submit', async (req, res) => {
     }
   }
   const approval = await approvalView(projectId, caller.id)
-  res.json({ approval, emails, emailConfigured: Boolean(mailConfiguration().apiKey && mailConfiguration().domain) })
+  res.json({ approval, emails, emailConfigured: Boolean(mailConfiguration().host && mailConfiguration().user) })
 })
 
 async function decideApproval(req: Request, approve: boolean, res: ExpressResponse) {
@@ -2854,7 +2860,7 @@ app.post('/api/teams/:id/members', async (req, res) => {
     editorInvitation = {
       sent: delivery.sent,
       ...(delivery.problem ? { problem: delivery.problem } : {}),
-      emailConfigured: Boolean(mail.apiKey && mail.domain),
+      emailConfigured: Boolean(mail.host && mail.user),
     }
   }
   res.status(201).json({ ...member, userId: Number(member.userId), role, ...(editorInvitation ? { editorInvitation } : {}) })
@@ -2945,6 +2951,162 @@ app.post('/api/design-decomposition/inpaint', memoryUpload.fields([{ name: 'imag
   form.append('mask', new Blob([Uint8Array.from(mask.buffer)], { type: mask.mimetype }), mask.originalname)
   const response = await requestMlWorker('/inpaint', { method: 'POST', body: form })
   res.json(await persistBuffer(userOf(req), Buffer.from(await response.arrayBuffer()), 'inpainted.png', 'image/png', 'image'))
+})
+
+// --- Video editor (Phase 1): isolated from the graphic design editor's projects/pages/elements tables ---
+
+interface VideoTimeline {
+  tracks: { id: string; kind: 'video' | 'audio' | 'text'; name: string; locked: boolean; muted: boolean; hidden: boolean; clips: Record<string, unknown>[] }[]
+}
+
+function emptyTimeline(): VideoTimeline {
+  return { tracks: [] }
+}
+
+function videoProjectSummary(row: AnyRow) {
+  return {
+    id: Number(row.id),
+    title: String(row.title),
+    width: Number(row.width),
+    height: Number(row.height),
+    fps: Number(row.fps),
+    durationSeconds: Number(row.durationSeconds ?? 0),
+    createdAt: new Date(String(row.createdAt)).toISOString(),
+    updatedAt: new Date(String(row.updatedAt)).toISOString(),
+  }
+}
+
+async function requireVideoProjectAccess(id: number, userId: number) {
+  const project = await one<AnyRow>('SELECT id FROM video_projects WHERE id = ? AND owner_id = ? AND deleted_at IS NULL', [id, userId])
+  if (!project) throw Object.assign(new Error('Video project not found.'), { status: 404 })
+}
+
+app.get('/api/video-projects', async (req, res) => {
+  const caller = userOf(req)
+  const found = await rows<AnyRow>(
+    `SELECT id, title, width, height, fps, duration_seconds AS durationSeconds, created_at AS createdAt, updated_at AS updatedAt
+     FROM video_projects WHERE owner_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC`,
+    [caller.id],
+  )
+  res.json(found.map(videoProjectSummary))
+})
+
+app.post('/api/video-projects', async (req, res) => {
+  const caller = userOf(req)
+  const body = objectBody(req)
+  const title = String(body.title ?? '').trim() || 'Untitled video'
+  if (title.length > 200) throw Object.assign(new Error('Title is too long.'), { status: 400 })
+  const width = Math.max(64, Math.min(4096, Number(body.width) || 1080))
+  const height = Math.max(64, Math.min(4096, Number(body.height) || 1920))
+  const fps = Math.max(1, Math.min(120, Number(body.fps) || 30))
+  const id = insertId(await run(
+    'INSERT INTO video_projects (owner_id, title, width, height, fps, timeline) VALUES (?, ?, ?, ?, ?, ?)',
+    [caller.id, title, width, height, fps, JSON.stringify(emptyTimeline())],
+  ))
+  const row = await one<AnyRow>(
+    `SELECT id, title, width, height, fps, duration_seconds AS durationSeconds, created_at AS createdAt, updated_at AS updatedAt
+     FROM video_projects WHERE id = ?`,
+    [id],
+  )
+  res.status(201).json(videoProjectSummary(row!))
+})
+
+app.get('/api/video-projects/:id', async (req, res) => {
+  const caller = userOf(req)
+  const id = idOf(req.params.id)
+  await requireVideoProjectAccess(id, caller.id)
+  const row = await one<AnyRow>(
+    `SELECT id, title, width, height, fps, duration_seconds AS durationSeconds, timeline, created_at AS createdAt, updated_at AS updatedAt
+     FROM video_projects WHERE id = ?`,
+    [id],
+  )
+  res.json({ ...videoProjectSummary(row!), timeline: jsonValue(row!.timeline, emptyTimeline()) })
+})
+
+app.put('/api/video-projects/:id', async (req, res) => {
+  const caller = userOf(req)
+  const id = idOf(req.params.id)
+  await requireVideoProjectAccess(id, caller.id)
+  const body = objectBody(req)
+  const sets: string[] = []
+  const values: unknown[] = []
+  if (typeof body.title === 'string') {
+    const title = body.title.trim()
+    if (!title || title.length > 200) throw Object.assign(new Error('Enter a valid title.'), { status: 400 })
+    sets.push('title = ?')
+    values.push(title)
+  }
+  if (body.timeline !== undefined) {
+    sets.push('timeline = ?')
+    values.push(JSON.stringify(body.timeline))
+  }
+  if (body.durationSeconds !== undefined) {
+    sets.push('duration_seconds = ?')
+    values.push(Math.max(0, Number(body.durationSeconds) || 0))
+  }
+  if (body.width !== undefined || body.height !== undefined) {
+    const width = Math.max(64, Math.min(4096, Number(body.width)))
+    const height = Math.max(64, Math.min(4096, Number(body.height)))
+    if (!Number.isFinite(width) || !Number.isFinite(height)) throw Object.assign(new Error('Enter a valid canvas size.'), { status: 400 })
+    sets.push('width = ?', 'height = ?')
+    values.push(width, height)
+  }
+  if (!sets.length) throw Object.assign(new Error('Nothing to update.'), { status: 400 })
+  await run(`UPDATE video_projects SET ${sets.join(', ')} WHERE id = ?`, [...values, id])
+  res.status(204).end()
+})
+
+app.delete('/api/video-projects/:id', async (req, res) => {
+  const caller = userOf(req)
+  const id = idOf(req.params.id)
+  await requireVideoProjectAccess(id, caller.id)
+  await run('UPDATE video_projects SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?', [id])
+  res.status(204).end()
+})
+
+function resolveAssetPath(url: string): string {
+  const marker = '/api/files/'
+  const at = url.indexOf(marker)
+  if (at === -1) return url
+  const storedName = decodeURIComponent(url.slice(at + marker.length).split(/[?#]/)[0] ?? '')
+  return path.join(storageDir, storedName)
+}
+
+app.post('/api/video-projects/:id/export', async (req, res) => {
+  const caller = userOf(req)
+  const id = idOf(req.params.id)
+  await requireVideoProjectAccess(id, caller.id)
+  const row = await one<AnyRow>('SELECT width, height, fps, timeline FROM video_projects WHERE id = ?', [id])
+  if (!row) throw Object.assign(new Error('Video project not found.'), { status: 404 })
+  const timeline = jsonValue(row.timeline, { tracks: [] }) as { tracks: ExportInput['tracks'] }
+  const jobId = startExportJob(
+    { width: Number(row.width), height: Number(row.height), fps: Number(row.fps), tracks: timeline.tracks ?? [] },
+    resolveAssetPath,
+  )
+  res.status(202).json({ jobId })
+})
+
+app.get('/api/video-projects/:id/export/:jobId', async (req, res) => {
+  const caller = userOf(req)
+  const id = idOf(req.params.id)
+  await requireVideoProjectAccess(id, caller.id)
+  const job = getExportJob(String(req.params.jobId))
+  if (!job) throw Object.assign(new Error('Export job not found.'), { status: 404 })
+  res.json({ status: job.status, progress: job.progress, error: job.error })
+})
+
+app.get('/api/video-projects/:id/export/:jobId/download', async (req, res) => {
+  const caller = userOf(req)
+  const id = idOf(req.params.id)
+  await requireVideoProjectAccess(id, caller.id)
+  const jobId = String(req.params.jobId)
+  const job = getExportJob(jobId)
+  if (!job || job.status !== 'done') throw Object.assign(new Error('Export is not ready yet.'), { status: 404 })
+  const buffer = await readExportOutput(jobId)
+  const project = await one<AnyRow>('SELECT title FROM video_projects WHERE id = ?', [id])
+  const asset = await persistBuffer(caller, buffer, `${String(project?.title ?? 'video')}.mp4`, 'video/mp4', 'video-export')
+  await cleanupExportJob(jobId)
+  res.json(asset)
 })
 
 app.get('/health', (_req, res) => res.json({ ok: true }))

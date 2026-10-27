@@ -14,7 +14,7 @@
   --surface-2: #f0ede6;
   --surface-3: #e7e3db;
   --hover: #f1eee8;
-  --selected: #fff0ea;
+  --selected: #eeedfe;
 
   --text-primary: #151515;
   --text-secondary: #62605b;
@@ -23,13 +23,13 @@
 
   --border: #ddd9d1;
   --border-strong: #c9c4ba;
-  --focus: #ff5a36;
+  --focus: #5b4fe5;
 
-  --brand: #ff5a36;
-  --brand-hover: #e94a2b;
-  --brand-active: #c83b22;
-  --brand-light: #ffe5db;
-  --brand-subtle: #fff0ea;
+  --brand: #5b4fe5;
+  --brand-hover: #4a3fd1;
+  --brand-active: #3a30b8;
+  --brand-light: #e3e1fc;
+  --brand-subtle: #eeedfe;
   --on-brand: #ffffff;
   --gold: #ffb547;
 
@@ -46,10 +46,10 @@
   --toolbar: #ffffff;
 
   /* Sparingly used gradients */
-  --g-brand: linear-gradient(135deg, #ff5a36, #ffb547);
-  --g-sunset: linear-gradient(135deg, #ff5a36, #f43f5e);
-  --g-fire: linear-gradient(135deg, #e94a2b, #ff8a45 55%, #ffd166);
-  --g-dark-fire: linear-gradient(135deg, #70271b, #ff5a36);
+  --g-brand: linear-gradient(135deg, #5b4fe5, #8f7fff);
+  --g-sunset: linear-gradient(135deg, #5b4fe5, #a855f7);
+  --g-fire: linear-gradient(135deg, #4a3fd1, #8f7fff 55%, #c7bbff);
+  --g-dark-fire: linear-gradient(135deg, #241b6b, #5b4fe5);
   --g-ai: linear-gradient(135deg, #ff5a36, #ff8a45 55%, #ffc857);
   --ai: #ff7a45;
   --ai-2: #ffc857;
@@ -113,7 +113,7 @@
   --surface-2: #171716;
   --surface-3: #20201e;
   --hover: #1d1d1b;
-  --selected: #2a1813;
+  --selected: #241f5c;
 
   --text-primary: #f5f1e9;
   --text-secondary: #d0ccc4;
@@ -122,14 +122,14 @@
 
   --border: #292825;
   --border-strong: #3a3834;
-  --focus: #ff6845;
+  --focus: #8f7fff;
 
-  --brand: #ff6845;
-  --brand-hover: #ff7959;
-  --brand-active: #e94a2b;
-  --brand-light: #321a13;
-  --brand-subtle: #2a1813;
-  --on-brand: #160a06;
+  --brand: #8f7fff;
+  --brand-hover: #a594ff;
+  --brand-active: #6f5fe0;
+  --brand-light: #2a2466;
+  --brand-subtle: #241f5c;
+  --on-brand: #0e0a2e;
 
   --success: #43b982;
   --warning: #e8a83e;
@@ -157,7 +157,7 @@
   --surface-2: #101010;
   --surface-3: #181818;
   --hover: #151515;
-  --selected: #21110d;
+  --selected: #1a1640;
 
   --text-primary: #ffffff;
   --text-secondary: #b8b8b8;
@@ -166,14 +166,14 @@
 
   --border: #222222;
   --border-strong: #333333;
-  --focus: #ff6845;
+  --focus: #8f7fff;
 
-  --brand: #ff5a36;
-  --brand-hover: #ff7959;
-  --brand-active: #e94a2b;
-  --brand-light: #2a1510;
-  --brand-subtle: #21110d;
-  --on-brand: #120704;
+  --brand: #7c6cff;
+  --brand-hover: #a594ff;
+  --brand-active: #6f5fe0;
+  --brand-light: #211c4d;
+  --brand-subtle: #1a1640;
+  --on-brand: #0c0a24;
 
   --success: #43b982;
   --warning: #e8a83e;

@@ -15,6 +15,8 @@ const BillingActivity = lazy(() => import('@/activities/billing/BillingActivity'
 const ProfileActivity = lazy(() => import('@/activities/profile/ProfileActivity'))
 const WorkspaceActivity = lazy(() => import('@/activities/workspace/WorkspaceActivity'))
 const EditorActivity = lazy(() => import('@/activities/editor/EditorActivity'))
+const VideoEditorActivity = lazy(() => import('@/activities/video/VideoEditorActivity'))
+const NewVideoActivity = lazy(() => import('@/activities/video/NewVideoActivity'))
 const SharedViewActivity = lazy(() => import('@/activities/share/SharedViewActivity'))
 
 function Loading() {
@@ -49,9 +51,11 @@ export default function App() {
           <Route path="/s/:token" element={<SharedViewActivity />} />
           <Route element={<RequireAuth />}>
             <Route path="/editor/:projectId" element={<EditorActivity />} />
+            <Route path="/video/:projectId" element={<VideoEditorActivity />} />
             <Route element={<AppShell />}>
               <Route index element={<DashboardActivity />} />
               <Route path="templates" element={<TemplatesActivity />} />
+              <Route path="video/new" element={<NewVideoActivity />} />
               <Route path="brand" element={<BrandHubActivity />} />
               <Route path="social" element={<SocialActivity />} />
               <Route path="billing" element={<BillingActivity />} />

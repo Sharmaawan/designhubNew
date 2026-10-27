@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useProjectStore } from '@/stores/projectStore'
 import { errorMessage, toast } from '@/stores/toastStore'
 import { Button } from '@/components/ui/Button'
+import { Icon } from '@/components/ui/Icon'
 import { Tabs, SelectField } from '@/components/ui/Fields'
 import { EmptyState, ErrorState, Skeleton } from '@/components/ui/Feedback'
 import { Modal } from '@/components/ui/Modal'
@@ -77,7 +78,18 @@ export default function DashboardActivity() {
           </h1>
           <p>Pick a size to start fresh, or open something you already began.</p>
         </div>
-        <CreateStrip onPick={(p) => void create(p)} onCustom={() => setCreating({ title: 'Untitled design', width: 1080, height: 1080 })} />
+        <CreateStrip
+          onPick={(p) => void create(p)}
+          onCustom={() => setCreating({ title: 'Untitled design', width: 1080, height: 1080 })}
+          trailing={
+            <button role="listitem" className="preset" onClick={() => navigate('/video/new')}>
+              <span className="preset__box">
+                <Icon name="video" size={26} />
+              </span>
+              <span className="preset__name">Start a video</span>
+            </button>
+          }
+        />
       </section>
 
       {waiting.length > 0 && (

@@ -82,6 +82,14 @@
   color: var(--text-secondary);
   font-size: clamp(15px, 1.2vw, 18px);
 }
+.stage__subhead {
+  position: relative;
+  z-index: 1;
+  margin: 10px 0 0;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text-secondary);
+}
 .strip {
   position: relative;
   z-index: 1;

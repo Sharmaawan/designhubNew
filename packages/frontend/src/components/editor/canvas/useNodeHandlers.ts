@@ -21,6 +21,13 @@ interface DragSession {
 
 const store = () => useEditorStore.getState()
 
+/** Clicking any member of a group should act on the whole group, not just that one element. */
+function groupMembers(s: ReturnType<typeof store>, id: string): string[] {
+  const groupId = s.elements[id]?.data.groupId
+  if (!groupId) return [id]
+  return (s.pageElementIds[s.currentPageId] ?? []).filter((eid) => s.elements[eid]?.data.groupId === groupId)
+}
+
 function withGuides(t: SnapTargets): SnapTargets {
   const g = useEditorUiStore.getState().guides
   return { xs: [...t.xs, ...g.x], ys: [...t.ys, ...g.y] }
@@ -39,8 +46,9 @@ export function useNodeHandlers(stage: () => Konva.Stage | null) {
         const s = store()
         const el = s.elements[id]
         if (!el) return
-        if (additive) s.select([id], { additive: true })
-        else if (!s.selection.includes(id)) s.select([id])
+        const members = groupMembers(s, id)
+        if (additive) s.select(members, { additive: true })
+        else if (!members.every((mid) => s.selection.includes(mid))) s.select(members)
         useEditorUiStore.getState().setCropping(null)
       },
 
@@ -110,7 +118,7 @@ export function useNodeHandlers(stage: () => Konva.Stage | null) {
 
       onContext: (id, x, y) => {
         const s = store()
-        if (!s.selection.includes(id)) s.select([id])
+        if (!s.selection.includes(id)) s.select(groupMembers(s, id))
         useEditorUiStore.getState().setContextMenu({ x, y })
       },
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import type { Category } from '@/models/api'
 import { contentApi } from '@/services/api/contentApi'
 import { Icon } from '@/components/ui/Icon'
@@ -6,6 +6,7 @@ import { Icon } from '@/components/ui/Icon'
 interface CreateStripProps {
   onPick: (preset: { title: string; width: number; height: number }) => void
   onCustom: () => void
+  trailing?: ReactNode
 }
 
 const artworkPalettes = [
@@ -35,7 +36,7 @@ function PresetArtwork({ variant }: { variant: number }) {
 }
 
 /** Each size is drawn at its real aspect ratio so people choose by shape, not by reading numbers. */
-export function CreateStrip({ onPick, onCustom }: CreateStripProps) {
+export function CreateStrip({ onPick, onCustom, trailing }: CreateStripProps) {
   const [categories, setCategories] = useState<Category[]>([])
   useEffect(() => {
     void contentApi.categories().then(setCategories).catch(() => setCategories([]))
@@ -65,6 +66,7 @@ export function CreateStrip({ onPick, onCustom }: CreateStripProps) {
         </span>
         <span className="preset__name">Custom size</span>
       </button>
+      {trailing}
     </div>
   )
 }

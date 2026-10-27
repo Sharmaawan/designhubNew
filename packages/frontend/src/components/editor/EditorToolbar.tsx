@@ -104,25 +104,28 @@ export function EditorToolbar({ onDialog }: { onDialog: (d: EditorDialog) => voi
           ))}
       </div>
       {connection !== 'online' && <span className="badge badge--warn">{connection === 'connecting' ? 'Connecting…' : 'Not live'}</span>}
-      <Button icon="share" onClick={() => onDialog('share')}>
-        Share
-      </Button>
-      <ApprovalControls onDialog={onDialog} />
-      <Button variant="primary" icon="download" onClick={() => onDialog('export')}>
-        Export
-      </Button>
-      <Menu
-        align="end"
-        trigger={<IconButton icon="more" label="More options" />}
-        items={[
-          { label: 'Save a version…', icon: 'history', disabled: !canEdit, onSelect: () => useEditorUiStore.getState().setRightTab('history') },
-          { label: 'Save as template', icon: 'template', disabled: access !== 'OWNER', onSelect: () => onDialog('template') },
-          { label: 'Find and replace text', icon: 'search', hint: 'Ctrl F', onSelect: () => onDialog('find') },
-          { label: 'Duplicate design', icon: 'copy', onSelect: () => void projectApi.duplicate(projectId).then((p) => navigate(`/editor/${p.id}`)).catch((e) => toast.error(errorMessage(e))) },
-          'separator',
-          { label: 'Keyboard shortcuts', icon: 'info', hint: '?', onSelect: () => onDialog('shortcuts') },
-        ]}
-      />
+      <span className="etop__sep" />
+      <div className="etop__actions">
+        <Button icon="share" onClick={() => onDialog('share')}>
+          Share
+        </Button>
+        <ApprovalControls onDialog={onDialog} />
+        <Button variant="primary" icon="download" onClick={() => onDialog('export')}>
+          Export
+        </Button>
+        <Menu
+          align="end"
+          trigger={<IconButton icon="more" label="More options" />}
+          items={[
+            { label: 'Save a version…', icon: 'history', disabled: !canEdit, onSelect: () => useEditorUiStore.getState().setRightTab('history') },
+            { label: 'Save as template', icon: 'template', disabled: access !== 'OWNER', onSelect: () => onDialog('template') },
+            { label: 'Find and replace text', icon: 'search', hint: 'Ctrl F', onSelect: () => onDialog('find') },
+            { label: 'Duplicate design', icon: 'copy', onSelect: () => void projectApi.duplicate(projectId).then((p) => navigate(`/editor/${p.id}`)).catch((e) => toast.error(errorMessage(e))) },
+            'separator',
+            { label: 'Keyboard shortcuts', icon: 'info', hint: '?', onSelect: () => onDialog('shortcuts') },
+          ]}
+        />
+      </div>
     </header>
   )
 }
