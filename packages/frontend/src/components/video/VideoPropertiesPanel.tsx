@@ -1,8 +1,10 @@
 import type { ReactNode } from 'react'
 import { useVideoEditorStore } from '@/stores/videoEditorStore'
-import { TextField } from '@/components/ui/Fields'
+import { TextField, SelectField } from '@/components/ui/Fields'
 import { NumField } from '@/components/editor/inspector/controls'
 import { Icon } from '@/components/ui/Icon'
+import { IconButton } from '@/components/ui/Button'
+import { TEXT_FONTS } from '@/models/textFonts'
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -44,6 +46,42 @@ export function VideoPropertiesPanel() {
           <TextField label="Text" value={clip.text ?? ''} onChange={(e) => updateClip(clip.id, { text: e.target.value })} />
         )}
       </Section>
+
+      {clip.kind === 'text' && (
+        <Section title="Style">
+          <SelectField
+            label="Font"
+            value={clip.fontFamily ?? TEXT_FONTS[0]!.id}
+            onChange={(e) => updateClip(clip.id, { fontFamily: e.target.value })}
+            style={{ fontFamily: TEXT_FONTS.find((f) => f.id === (clip.fontFamily ?? TEXT_FONTS[0]!.id))?.css }}
+          >
+            {TEXT_FONTS.map((f) => (
+              <option key={f.id} value={f.id} style={{ fontFamily: f.css }}>{f.label}</option>
+            ))}
+          </SelectField>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <NumField label="Font size" ariaLabel="Font size (px)" value={clip.fontSize ?? 48} min={8} max={400} onChange={(v) => updateClip(clip.id, { fontSize: v })} />
+            <div className="field">
+              <label className="field__label" htmlFor="text-color">Colour</label>
+              <input id="text-color" type="color" value={clip.color ?? '#ffffff'} onChange={(e) => updateClip(clip.id, { color: e.target.value })} style={{ width: '100%', height: 32, padding: 2 }} />
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 4 }}>
+            <IconButton icon="bold" label="Bold" active={!!clip.bold} onClick={() => updateClip(clip.id, { bold: !clip.bold })} />
+            <IconButton icon="italic" label="Italic" active={!!clip.italic} onClick={() => updateClip(clip.id, { italic: !clip.italic })} />
+            <span style={{ width: 1, background: 'var(--v-border)', margin: '0 4px' }} />
+            <IconButton icon="alignLeft" label="Align left" active={(clip.textAlign ?? 'center') === 'left'} onClick={() => updateClip(clip.id, { textAlign: 'left' })} />
+            <IconButton icon="alignCenterH" label="Align centre" active={(clip.textAlign ?? 'center') === 'center'} onClick={() => updateClip(clip.id, { textAlign: 'center' })} />
+            <IconButton icon="alignRight" label="Align right" active={(clip.textAlign ?? 'center') === 'right'} onClick={() => updateClip(clip.id, { textAlign: 'right' })} />
+          </div>
+          <div className="field video-props__volume">
+            <label className="field__label" htmlFor="text-opacity" style={{ width: 54, flex: 'none' }}>Opacity</label>
+            <input id="text-opacity" type="range" min={0} max={1} step={0.05} value={clip.opacity ?? 1} onChange={(e) => updateClip(clip.id, { opacity: Number(e.target.value) })} />
+            <span className="video-props__volume-value">{Math.round((clip.opacity ?? 1) * 100)}%</span>
+          </div>
+          <p className="field__hint">Drag the text directly on the canvas to reposition it. Double-click it to edit.</p>
+        </Section>
+      )}
 
       <Section title="Timing">
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>

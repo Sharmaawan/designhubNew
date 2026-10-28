@@ -19,7 +19,14 @@ export interface ExportClip {
   muted?: boolean
   text?: string
   fontSize?: number
+  fontFamily?: string
   color?: string
+  bold?: boolean
+  italic?: boolean
+  textAlign?: 'left' | 'center' | 'right'
+  opacity?: number
+  x?: number
+  y?: number
 }
 
 export interface ExportTrack {
@@ -80,6 +87,47 @@ function segmentsForTrack(clips: ExportClip[], duration: number): { start: numbe
   return merged
 }
 
+// Must stay in sync with the font ids offered in packages/frontend/src/models/textFonts.ts — otherwise
+// a font chosen in the editor silently falls back to the default in the exported video.
+const FONT_DIR = process.env.EXPORT_FONT_DIR ?? 'C:/Windows/Fonts'
+const FONT_TABLE: Record<string, { regular: string; bold?: string; italic?: string; boldItalic?: string }> = {
+  arial: { regular: 'arial.ttf', bold: 'arialbd.ttf', italic: 'ariali.ttf', boldItalic: 'arialbi.ttf' },
+  georgia: { regular: 'georgia.ttf', bold: 'georgiab.ttf', italic: 'georgiai.ttf', boldItalic: 'georgiaz.ttf' },
+  times: { regular: 'times.ttf', bold: 'timesbd.ttf', italic: 'timesi.ttf', boldItalic: 'timesbi.ttf' },
+  courier: { regular: 'cour.ttf', bold: 'courbd.ttf', italic: 'couri.ttf', boldItalic: 'courbi.ttf' },
+  verdana: { regular: 'verdana.ttf', bold: 'verdanab.ttf', italic: 'verdanai.ttf', boldItalic: 'verdanaz.ttf' },
+  comic: { regular: 'comic.ttf', bold: 'comicbd.ttf', italic: 'comici.ttf', boldItalic: 'comicz.ttf' },
+  impact: { regular: 'impact.ttf' },
+  trebuchet: { regular: 'trebuc.ttf', bold: 'trebucbd.ttf', italic: 'trebucit.ttf', boldItalic: 'trebucbi.ttf' },
+}
+const fontResolveCache = new Map<string, string | undefined>()
+
+/** Resolves a text clip's requested font/weight/style to an actual installed font file, falling back
+ * through bold-italic → bold/italic → regular → the configured default → undefined (no fontfile arg,
+ * ffmpeg's own default) as each more-specific file turns out to be missing on this server. */
+function resolveFontFile(familyId: string | undefined, bold: boolean, italic: boolean): string | undefined {
+  const key = `${familyId ?? 'arial'}|${bold}|${italic}`
+  if (fontResolveCache.has(key)) return fontResolveCache.get(key)
+  const entry = FONT_TABLE[familyId ?? 'arial'] ?? FONT_TABLE.arial!
+  const candidates = [
+    bold && italic ? entry.boldItalic : undefined,
+    bold ? entry.bold : undefined,
+    italic ? entry.italic : undefined,
+    entry.regular,
+  ].filter((f): f is string => !!f)
+  let resolved: string | undefined
+  for (const file of candidates) {
+    const full = path.join(FONT_DIR, file)
+    if (existsSync(full)) { resolved = full; break }
+  }
+  if (!resolved) {
+    const fallback = process.env.EXPORT_FONT_FILE ?? path.join(FONT_DIR, 'arial.ttf')
+    if (existsSync(fallback)) resolved = fallback
+  }
+  fontResolveCache.set(key, resolved)
+  return resolved
+}
+
 function escapeDrawtext(text: string): string {
   return text.replace(/\\/g, '\\\\').replace(/:/g, '\\:').replace(/'/g, "\\'").replace(/\r?\n/g, ' ')
 }
@@ -100,6 +148,27 @@ function run(bin: string, args: string[], onProgress?: (frac: number) => void, t
       else reject(new Error(`ffmpeg exited with code ${code}: ${stderr.slice(-2000)}`))
     })
   })
+}
+
+const audioStreamCache = new Map<string, Promise<boolean>>()
+
+/** Whether a source file has an audio stream. A clip from a video with no audio track (e.g. a silent
+ * screen recording) must not try to reference a [N:a] stream in the filter graph — that fails the
+ * entire export ("matches no streams"), not just that one clip's audio. No ffprobe binary is bundled,
+ * so this probes with plain ffmpeg (which still prints stream info to stderr before erroring on the
+ * missing output). */
+function probeHasAudio(ffmpegBin: string, filePath: string): Promise<boolean> {
+  const cached = audioStreamCache.get(filePath)
+  if (cached) return cached
+  const promise = new Promise<boolean>((resolve) => {
+    const child = spawn(ffmpegBin, ['-i', filePath, '-hide_banner'])
+    let stderr = ''
+    child.stderr.on('data', (buf: Buffer) => { stderr += buf.toString() })
+    child.on('error', () => resolve(false))
+    child.on('close', () => resolve(/Stream #\d+:\d+.*Audio:/.test(stderr)))
+  })
+  audioStreamCache.set(filePath, promise)
+  return promise
 }
 
 async function renderVideoProject(
@@ -138,7 +207,7 @@ async function renderVideoProject(
       const trimIn = seg.clip.trimIn + (seg.start - seg.clip.start)
       args.push('-ss', trimIn.toFixed(3), '-t', segDuration.toFixed(3), '-i', resolveAssetPath(seg.clip.assetUrl ?? ''))
       filters.push(`[${inputIndex}:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${fps},format=yuv420p[${label}]`)
-      if (!baseTrack?.muted && !seg.clip.muted && seg.clip.volume > 0) {
+      if (!baseTrack?.muted && !seg.clip.muted && seg.clip.volume > 0 && await probeHasAudio(ffmpegPath, resolveAssetPath(seg.clip.assetUrl ?? ''))) {
         const alabel = `a${inputIndex}`
         const delayMs = Math.round(seg.start * 1000)
         filters.push(`[${inputIndex}:a]asetpts=PTS-STARTPTS,adelay=${delayMs}|${delayMs},volume=${seg.clip.volume}[${alabel}]`)
@@ -162,7 +231,7 @@ async function renderVideoProject(
         args.push('-loop', '1', '-t', segDuration.toFixed(3), '-i', resolveAssetPath(clip.assetUrl ?? ''))
       } else if (clip.kind === 'video') {
         args.push('-ss', clip.trimIn.toFixed(3), '-t', segDuration.toFixed(3), '-i', resolveAssetPath(clip.assetUrl ?? ''))
-        if (!track.muted && !clip.muted && clip.volume > 0) {
+        if (!track.muted && !clip.muted && clip.volume > 0 && await probeHasAudio(ffmpegPath, resolveAssetPath(clip.assetUrl ?? ''))) {
           const alabel = `a${inputIndex}`
           const delayMs = Math.round(clip.start * 1000)
           filters.push(`[${inputIndex}:a]asetpts=PTS-STARTPTS,adelay=${delayMs}|${delayMs},volume=${clip.volume}[${alabel}]`)
@@ -194,16 +263,30 @@ async function renderVideoProject(
 
   let videoOut = compositeOut
   let textIndex = 0
-  const fontFile = process.env.EXPORT_FONT_FILE ?? 'C:/Windows/Fonts/arial.ttf'
-  const hasFont = existsSync(fontFile)
   for (const track of input.tracks) {
     if (track.kind !== 'text' || track.hidden) continue
     for (const clip of track.clips) {
       if (!clip.text?.trim()) continue
       const next = `txt${textIndex++}`
-      const fontArg = hasFont ? `fontfile='${fontFile.replace(/:/g, '\\:')}':` : ''
+      const fontFile = resolveFontFile(clip.fontFamily, !!clip.bold, !!clip.italic)
+      // ffmpeg's filtergraph parser treats backslash as its own escape character, so a raw Windows path
+      // from path.join() (C:\Windows\Fonts\...) gets silently mangled — \W, \F, \i etc. are consumed as
+      // escape sequences and the backslashes vanish, leaving an invalid concatenated path. ffmpeg accepts
+      // forward slashes in Windows paths just fine, so normalize to those before escaping the colon.
+      const fontArg = fontFile ? `fontfile='${fontFile.replace(/\\/g, '/').replace(/:/g, '\\:')}':` : ''
+      const colorHex = (clip.color ?? '#ffffff').replace('#', '0x')
+      const opacity = Math.max(0, Math.min(1, clip.opacity ?? 1))
+      // x/y are the editor's fractional center point of the text, same coordinate the preview uses —
+      // drawtext positions by the box's top-left, so offset by half the rendered text size to match.
+      const cx = Math.max(0, Math.min(1, clip.x ?? 0.5))
+      const cy = Math.max(0, Math.min(1, clip.y ?? 0.85))
+      // Real bold/italic font files are used above when available (resolveFontFile). If the requested
+      // weight/style has no matching file on this server, fall back to a thin matching-color border as
+      // an honest approximation of bold rather than silently ignoring it — italic has no such fallback.
+      const boldFallback = clip.bold && !fontFile?.toLowerCase().includes('bd') && !fontFile?.toLowerCase().includes('bold')
+      const boldArg = boldFallback ? `:borderw=2:bordercolor=${colorHex}@${opacity.toFixed(2)}` : ''
       filters.push(
-        `[${videoOut}]drawtext=${fontArg}text='${escapeDrawtext(clip.text)}':fontsize=${Math.round(clip.fontSize ?? 48)}:fontcolor=${(clip.color ?? '#ffffff').replace('#', '0x')}:x=(w-text_w)/2:y=h-text_h-60:enable='between(t,${clip.start},${clip.start + clip.duration})'[${next}]`,
+        `[${videoOut}]drawtext=${fontArg}text='${escapeDrawtext(clip.text)}':fontsize=${Math.round(clip.fontSize ?? 48)}:fontcolor=${colorHex}@${opacity.toFixed(2)}${boldArg}:x=(w*${cx.toFixed(4)})-text_w/2:y=(h*${cy.toFixed(4)})-text_h/2:enable='between(t,${clip.start},${clip.start + clip.duration})'[${next}]`,
       )
       videoOut = next
     }

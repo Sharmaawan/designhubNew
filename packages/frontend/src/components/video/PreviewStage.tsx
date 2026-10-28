@@ -4,6 +4,7 @@ import { useVideoEditorStore } from '@/stores/videoEditorStore'
 import { errorMessage, toast } from '@/stores/toastStore'
 import { IconButton } from '@/components/ui/Button'
 import { CanvasSettings } from './CanvasSettings'
+import { textFontCss } from '@/models/textFonts'
 
 function fmt(t: number) {
   const m = Math.floor(t / 60)
@@ -31,12 +32,18 @@ export function PreviewStage() {
   const playing = useVideoEditorStore((s) => s.playing)
   const duration = useVideoEditorStore((s) => s.duration())
   const hasContent = duration > 0
+  const selection = useVideoEditorStore((s) => s.selection)
+  const select = useVideoEditorStore((s) => s.select)
+  const updateClip = useVideoEditorStore((s) => s.updateClip)
 
   const stageRef = useRef<HTMLDivElement>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
   // The one scale factor mapping project pixels (width x height) to on-screen preview pixels.
   const [viewportSize, setViewportSize] = useState({ w: 0, h: 0 })
   const [zoom, setZoom] = useState(1)
+  const [editingTextId, setEditingTextId] = useState<string | null>(null)
+  const [textDrag, setTextDrag] = useState<{ id: string; startClientX: number; startClientY: number; startX: number; startY: number } | null>(null)
+  const [textDragPos, setTextDragPos] = useState<{ x: number; y: number } | null>(null)
   const videoRefs = useRef(new Map<string, HTMLVideoElement>())
   const audioRefs = useRef(new Map<string, HTMLAudioElement>())
   const rafRef = useRef<number | null>(null)
@@ -202,11 +209,75 @@ export function PreviewStage() {
               <img key={clip.id} className="video-stage__media" style={{ zIndex: i }} src={clip.assetUrl} alt="" />
             ),
           )}
-          {textClips.map((c) => (
-            <div key={c.id} className="video-stage__text" style={{ fontSize: c.fontSize ?? 48, color: c.color ?? '#ffffff' }}>
-              {c.text}
-            </div>
-          ))}
+          {textClips.map((c) => {
+            const isSelected = selection.length === 1 && selection[0] === c.id
+            const isEditing = editingTextId === c.id
+            const live = textDrag?.id === c.id && textDragPos ? textDragPos : { x: c.x ?? 0.5, y: c.y ?? 0.85 }
+            const commonStyle = {
+              left: `${live.x * 100}%`,
+              top: `${live.y * 100}%`,
+              // Font size is stored in project pixels (also what export's drawtext uses) — scale it down
+              // to match the preview's current on-screen size, same as the canvas frame itself, so the
+              // text stays visually correct whether the preview is fit-to-screen or zoomed.
+              fontSize: Math.max(1, (c.fontSize ?? 48) * scale),
+              fontFamily: textFontCss(c.fontFamily),
+              color: c.color ?? '#ffffff',
+              fontWeight: c.bold ? 700 : 400,
+              fontStyle: c.italic ? 'italic' : 'normal',
+              textAlign: c.textAlign ?? 'center',
+              opacity: c.opacity ?? 1,
+            } as const
+            if (isEditing) {
+              return (
+                <textarea
+                  key={c.id}
+                  autoFocus
+                  className="video-stage__text video-stage__text--editing"
+                  style={commonStyle}
+                  defaultValue={c.text ?? ''}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') { e.currentTarget.blur(); setEditingTextId(null) }
+                    else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.currentTarget.blur() }
+                  }}
+                  onBlur={(e) => {
+                    updateClip(c.id, { text: e.target.value })
+                    setEditingTextId(null)
+                  }}
+                />
+              )
+            }
+            return (
+              <div
+                key={c.id}
+                className={`video-stage__text ${isSelected ? 'is-selected' : ''}`}
+                style={commonStyle}
+                onPointerDown={(e) => {
+                  e.stopPropagation()
+                  select([c.id])
+                  setTextDrag({ id: c.id, startClientX: e.clientX, startClientY: e.clientY, startX: live.x, startY: live.y })
+                  e.currentTarget.setPointerCapture(e.pointerId)
+                }}
+                onPointerMove={(e) => {
+                  if (textDrag?.id !== c.id || frameW <= 0 || frameH <= 0) return
+                  const dx = (e.clientX - textDrag.startClientX) / frameW
+                  const dy = (e.clientY - textDrag.startClientY) / frameH
+                  setTextDragPos({
+                    x: Math.max(0, Math.min(1, textDrag.startX + dx)),
+                    y: Math.max(0, Math.min(1, textDrag.startY + dy)),
+                  })
+                }}
+                onPointerUp={() => {
+                  if (textDrag?.id === c.id && textDragPos) updateClip(c.id, { x: textDragPos.x, y: textDragPos.y })
+                  setTextDrag(null)
+                  setTextDragPos(null)
+                }}
+                onDoubleClick={(e) => { e.stopPropagation(); setEditingTextId(c.id) }}
+              >
+                {c.text}
+              </div>
+            )
+          })}
           {audioClips.map(({ clip: c }) => (
             <audio key={c.id} ref={(el) => { if (el) audioRefs.current.set(c.id, el); else audioRefs.current.delete(c.id) }} />
           ))}

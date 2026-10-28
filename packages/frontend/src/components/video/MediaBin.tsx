@@ -65,18 +65,19 @@ export function MediaBin() {
   async function addToTimeline(asset: AssetFile) {
     const kind = asset.kind === 'audio' ? 'audio' : asset.kind === 'video' ? 'video' : 'image'
     const targetKind = kind === 'image' ? 'video' : kind
-    // Prefer the track the user explicitly selected (by clicking its label), if it's a compatible kind.
-    const active = activeTrackId ? tracks.find((t) => t.id === activeTrackId && t.kind === targetKind) : undefined
-    const track = active ?? tracks.find((t) => t.kind === targetKind)
-    let trackId = track?.id
-    if (!trackId) {
-      trackId = addTrack(targetKind)
-      setActiveTrack(trackId)
-    }
-    // Never silently stack a new clip exactly on top of the last one: start after it (or at the playhead, whichever is later).
-    const trackEnd = track ? track.clips.reduce((max, c) => Math.max(max, c.start + c.duration), 0) : 0
     const duration = await probeDuration(asset)
-    const start = Math.max(playhead, trackEnd)
+    // Always insert at the current playhead, exactly as the user asked — never silently relocate it to
+    // the end of whatever's already on the track. If the resolved track already has a clip occupying
+    // this exact span, composite the new clip on a fresh track instead of overlapping it in place
+    // (this is also how "place a photo above a video on another track" happens automatically).
+    const start = Math.max(0, playhead)
+    const end = start + duration
+    const active = activeTrackId ? tracks.find((t) => t.id === activeTrackId && t.kind === targetKind) : undefined
+    const candidate = active ?? tracks.find((t) => t.kind === targetKind)
+    const hasRoom = !!candidate && !candidate.clips.some((c) => start < c.start + c.duration && end > c.start)
+    const trackId = candidate && hasRoom ? candidate.id : addTrack(targetKind)
+    if (!candidate || !hasRoom) setActiveTrack(trackId)
+
     const id = addClip(trackId, {
       kind: kind === 'image' ? 'image' : kind === 'audio' ? 'audio' : 'video',
       start, duration, trimIn: 0,

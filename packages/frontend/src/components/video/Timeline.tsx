@@ -21,6 +21,7 @@ export function Timeline() {
   const playhead = useVideoEditorStore((s) => s.playhead)
   const setPlayhead = useVideoEditorStore((s) => s.setPlayhead)
   const moveClip = useVideoEditorStore((s) => s.moveClip)
+  const addClip = useVideoEditorStore((s) => s.addClip)
   const updateClip = useVideoEditorStore((s) => s.updateClip)
   const removeClip = useVideoEditorStore((s) => s.removeClip)
   const splitClipAt = useVideoEditorStore((s) => s.splitClipAt)
@@ -86,6 +87,34 @@ export function Timeline() {
 
   function seekFromClick(e: ReactPointerEvent<HTMLDivElement>) {
     setPlayhead(timeAt(e.clientX))
+  }
+
+  /** Reuses the existing text track if there is one (never creates duplicate empty text tracks), and —
+   * crucially — actually inserts a text CLIP at the playhead. Before this, "+ Text track" only created
+   * an empty track with nothing on it, which is why nothing could ever be typed or shown: there was no
+   * clip for the properties panel or preview to find. */
+  function addTextClip() {
+    const existing = tracks.find((t) => t.kind === 'text')
+    const trackId = existing?.id ?? addTrack('text')
+    setActiveTrack(trackId)
+    const start = Math.max(0, playhead)
+    const id = addClip(trackId, {
+      kind: 'text',
+      start,
+      duration: 5,
+      trimIn: 0,
+      volume: 0,
+      text: 'Type something...',
+      fontSize: 48,
+      color: '#ffffff',
+      textAlign: 'center',
+      opacity: 1,
+      x: 0.5,
+      y: 0.85,
+      bold: false,
+      italic: false,
+    })
+    select([id])
   }
 
   /** Keeps the preview showing something after a select/trim, instead of silently landing outside the clip. */
@@ -166,7 +195,7 @@ export function Timeline() {
         <IconButton icon="zoomIn" label="Zoom in" onClick={() => setPps(pps + 20)} />
         <Button size="sm" icon="plus" onClick={() => setActiveTrack(addTrack('video'))}>Video track</Button>
         <Button size="sm" icon="plus" onClick={() => setActiveTrack(addTrack('audio'))}>Audio track</Button>
-        <Button size="sm" icon="plus" onClick={() => setActiveTrack(addTrack('text'))}>Text track</Button>
+        <Button size="sm" icon="plus" onClick={addTextClip}>Text track</Button>
       </div>
       <div className="video-timeline__rail" ref={railRef}>
         <div className="video-timeline__ruler" style={{ width: totalWidth }} onPointerDown={seekFromClick}>

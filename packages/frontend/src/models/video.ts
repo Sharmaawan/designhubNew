@@ -14,7 +14,16 @@ export interface VideoClip {
   muted?: boolean
   text?: string
   fontSize?: number
+  fontFamily?: string
   color?: string
+  bold?: boolean
+  italic?: boolean
+  textAlign?: 'left' | 'center' | 'right'
+  /** 0–1, fraction of the project canvas opacity. */
+  opacity?: number
+  /** 0–1, fraction of the canvas width/height — the text's center point. Defaults to bottom-center. */
+  x?: number
+  y?: number
 }
 
 export interface VideoTrack {

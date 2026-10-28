@@ -370,14 +370,36 @@
 }
 .video-stage__text {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 10%;
-  text-align: center;
-  font-weight: 700;
-  color: #fff;
+  transform: translate(-50%, -50%);
+  max-width: 92%;
   text-shadow: 0 2px 8px rgb(0 0 0 / 60%);
-  pointer-events: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+  cursor: grab;
+  touch-action: none;
+  padding: 2px 6px;
+  border-radius: 3px;
+  border: 1px dashed transparent;
+  user-select: none;
+  z-index: 10;
+}
+.video-stage__text:hover {
+  border-color: rgb(255 255 255 / 30%);
+}
+.video-stage__text.is-selected {
+  border: 1px dashed var(--v-selection, var(--v-accent));
+  cursor: move;
+}
+.video-stage__text--editing {
+  cursor: text;
+  background: rgb(0 0 0 / 35%);
+  border: 1px dashed var(--v-accent);
+  resize: none;
+  overflow: hidden;
+  outline: none;
+  font-family: inherit;
+  min-width: 80px;
+  min-height: 1.4em;
 }
 
 /* ---------- Right properties panel ---------- */
